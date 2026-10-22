@@ -1,5 +1,6 @@
 //! Launcher configuration and persistence.
 
+use crate::downloader::DownloadSource;
 use crate::paths::{default_minecraft_dir, libraries_dir, versions_dir};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -37,6 +38,16 @@ pub struct LauncherConfig {
     pub window_width: u32,
     /// Game window default height.
     pub window_height: u32,
+    /// Whether game directory points to the version directory.
+    #[serde(default = "default_true")]
+    pub version_isolation: bool,
+    /// Download source mirror (Official or BMCLAPI).
+    #[serde(default)]
+    pub download_source: DownloadSource,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for LauncherConfig {
@@ -52,6 +63,8 @@ impl Default for LauncherConfig {
             extra_jvm_args: Vec::new(),
             window_width: 854,
             window_height: 480,
+            version_isolation: true,
+            download_source: DownloadSource::Bmclapi,
         }
     }
 }

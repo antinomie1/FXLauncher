@@ -1,30 +1,29 @@
 # AGENTS.md — FXLauncher 研发指南
 
-本项目是一个基于 Rust（2024 edition）开发的跨平台轻量化 Minecraft 启动器骨架。
-UI 界面使用 Aegle 标记语言（`.aegle`）编写，并通过 Git 依赖引入 Aegle 库。
+本项目是一个基于 Rust（2024 edition）开发的跨平台轻量化 Minecraft 启动器核心后端。
 
 ---
 
 ## 核心原则 (Core Principles)
 
 1. **禁止过度工程 (No Over-Engineering)**
-   - 保持架构直观、精简，聚焦启动器核心业务（路径、配置、账户、版本解析、Java 探测、命令构建与执行）。
-   - 杜绝多余的抽象层、复杂的生命周期注入或臃肿的第三方框架。
+   - 保持架构直观、扁平，聚焦启动器核心后端能力。
+   - 杜绝多余的抽象层或复杂的生命周期注入。
 
 2. **单 Crate 架构 (Single Crate)**
-   - 整个项目为一个标准的单个 Cargo 包（非 Workspace）。
-   - 通过 `src/lib.rs` 暴露核心库功能，`src/main.rs` 作为启动入口。
+   - 项目为一个标准的单 Cargo 包（非 Workspace）。
+   - 通过 `src/lib.rs` 暴露核心库功能。
 
 3. **测试与源码分离 (Tests Separated from Src)**
-   - 业务逻辑与驱动放在 `src/`。
+   - 业务逻辑放在 `src/`。
    - 所有集成测试与用例统一放在项目根目录的 `tests/` 目录中。
 
 4. **单文件行数限制 (File Length Limit)**
-   - 每个源文件及标记文件严格限制在 **1000 行以内**（建议保持在 100~300 行）。
+   - 每个源文件严格限制在 **1000 行以内**（通常保持在 100~350 行）。
 
-5. **Aegle 标记语言驱动 UI (Aegle Markup UI)**
-   - 界面布局与控件定义统一放在 `ui/` 下的 `.aegle` 文件中。
-   - Rust 代码负责通过 `aegle::ui!` 宏编译界面并绑定业务回调，避免在 Rust 代码中硬编码复杂控件层级。
+5. **版本隔离与非阻塞任务设计**
+   - 支持将游戏工作目录绑定至对应版本子目录（`versions/<version>/`），每个版本具有独立的 `mods/`、`config/`、`saves/`。
+   - 网络下载等耗时操作在后台工作线程执行，通过全局任务管理器跟踪状态、进度并支持暂停、恢复与取消。
 
 ---
 
@@ -33,27 +32,30 @@ UI 界面使用 Aegle 标记语言（`.aegle`）编写，并通过 Git 依赖引
 ```text
 fxlauncher/
 ├── AGENTS.md            # 本规范文件
-├── Cargo.toml           # 项目定义 (Rust 2024, git aegle)
-├── README.md            # 项目说明与快速开始
-├── ui/                  # Aegle 标记语言界面描述
-│   └── main.aegle       # 主窗口布局与控件定义
-├── src/                 # 核心代码
-│   ├── lib.rs           # 库导出与公共类型
-│   ├── main.rs          # 启动入口与 CLI/GUI 运行
+├── Cargo.toml           # 项目定义 (Rust 2024)
+├── README.md            # 项目说明与测试指引
+├── src/                 # 后端核心源码
+│   ├── lib.rs           # 库导出与公共模块暴露
+│   ├── main.rs          # 最小入口
 │   ├── paths.rs         # 跨平台路径计算 (.minecraft, Java)
 │   ├── config.rs        # 启动器配置存储与加载 (JSON)
-│   ├── account.rs       # 离线与在线账户数据结构及 UUID 生成
-│   ├── java.rs          # Java 运行时检测与版本兼容性匹配
-│   ├── version.rs       # Minecraft 客户端版本元数据解析 (version.json)
-│   ├── launch.rs        # 启动参数组装与子进程构建
-│   └── ui.rs            # Aegle 视图事件绑定与状态控制器
-└── tests/               # 独立测试集合
-    ├── paths_test.rs    # 跨平台路径解析测试
-    ├── config_test.rs   # 配置读写与序列化测试
-    ├── account_test.rs  # 账户与离线 UUID 生成测试
-    ├── java_test.rs     # Java 版本输出解析与兼容测试
-    ├── version_test.rs  # version.json 规则过滤与依赖解析测试
-    └── launch_test.rs   # 启动命令与参数拼装测试
+│   ├── account.rs       # 离线与在线账户模型、UUID 派生
+│   ├── java.rs          # Java 探测、版本提取与版本兼容性匹配
+│   ├── version.rs       # Minecraft version.json 解析与类路径装配
+│   ├── launch.rs        # 启动命令组装、JVM 参数与进程管理
+│   ├── task.rs          # 全局非阻塞任务管理与 SHA-1 校验
+│   ├── downloader.rs    # 游戏版本下载与目录初始化
+│   └── mod_manager.rs   # 模组搜索与下载管理
+└── tests/               # 独立测试集合 (与 src 完全分离)
+    ├── paths_test.rs        # 路径解析测试
+    ├── account_test.rs      # 账户与 UUID 测试
+    ├── config_test.rs       # 配置读写测试
+    ├── java_test.rs         # Java 输出解析与兼容测试
+    ├── version_test.rs      # 版本 JSON 与规则测试
+    ├── launch_test.rs       # 启动命令与参数拼装测试
+    ├── task_test.rs         # 任务生命周期测试
+    ├── downloader_test.rs   # 下载地址转换与版本目录测试
+    └── mod_manager_test.rs  # 模组目录与扫描测试
 ```
 
 ---
@@ -64,9 +66,6 @@ fxlauncher/
 # 代码检查
 cargo check
 
-# 运行全套测试 (tests/ 下的所有分离测试)
+# 运行全套测试
 cargo test
-
-# 构建并运行启动器
-cargo run
 ```

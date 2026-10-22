@@ -52,6 +52,8 @@ fn test_build_launch_command_modern() {
         extra_jvm_args: vec!["-XX:+UseG1GC".to_string()],
         window_width: 854,
         window_height: 480,
+        version_isolation: false,
+        download_source: fxlauncher::downloader::DownloadSource::Official,
     };
     let account = Account::new_offline("Steve");
 
@@ -109,6 +111,7 @@ fn test_build_launch_command_legacy() {
     let tokens = build_token_map(&ctx, "dummy.jar");
     let game_args = build_game_args(&ctx, &tokens);
 
+    let expected_dir = config.game_dir.join("versions").join("1.12.2");
     assert_eq!(
         game_args,
         vec![
@@ -117,7 +120,7 @@ fn test_build_launch_command_legacy() {
             "--version",
             "1.12.2",
             "--gameDir",
-            &config.game_dir.to_string_lossy().to_string()
+            &expected_dir.to_string_lossy().to_string()
         ]
     );
 

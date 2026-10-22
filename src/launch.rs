@@ -3,7 +3,7 @@
 use crate::account::Account;
 use crate::config::LauncherConfig;
 use crate::paths::{assets_dir, classpath_separator, natives_dir, os_name};
-use crate::version::{ArgumentItem, ArgumentValue, VersionInfo, collect_classpaths, evaluate_rules};
+use crate::version::{ArgumentItem, ArgumentValue, VersionInfo, collect_classpaths, evaluate_rules, load_version_info};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -37,7 +37,12 @@ pub fn replace_tokens(template: &str, tokens: &HashMap<&str, String>) -> String 
 
 /// Assembles token map from launch context.
 pub fn build_token_map(ctx: &LaunchContext<'_>, classpath_str: &str) -> HashMap<&'static str, String> {
-    let game_dir_str = ctx.config.game_dir.to_string_lossy().to_string();
+    let effective_game_dir = if ctx.config.version_isolation {
+        ctx.config.game_dir.join("versions").join(&ctx.version.id)
+    } else {
+        ctx.config.game_dir.clone()
+    };
+    let game_dir_str = effective_game_dir.to_string_lossy().to_string();
     let assets_dir_str = assets_dir(&ctx.config.game_dir).to_string_lossy().to_string();
     let natives_dir_str = natives_dir(&ctx.config.game_dir, &ctx.version.id)
         .to_string_lossy()
@@ -180,7 +185,12 @@ pub fn build_launch_command(ctx: &LaunchContext<'_>) -> Result<Command, LaunchEr
     let game_args = build_game_args(ctx, &tokens);
 
     let mut cmd = Command::new(&ctx.config.java_path);
-    cmd.current_dir(&ctx.config.game_dir);
+    let effective_game_dir = if ctx.config.version_isolation {
+        ctx.config.game_dir.join("versions").join(&ctx.version.id)
+    } else {
+        ctx.config.game_dir.clone()
+    };
+    cmd.current_dir(&effective_game_dir);
     cmd.args(&jvm_args);
     cmd.arg(&ctx.version.main_class);
     cmd.args(&game_args);
@@ -193,4 +203,34 @@ pub fn spawn_game(ctx: &LaunchContext<'_>) -> Result<Child, LaunchError> {
     let mut cmd = build_launch_command(ctx)?;
     let child = cmd.spawn()?;
     Ok(child)
+}
+
+/// Prepares launch context and spawns Minecraft, returning either the Child process or an error message.
+pub fn prepare_and_launch(config: &LauncherConfig) -> Result<Child, String> {
+    if !Account::validate_username(&config.player_name) {
+        return Err("玩家用户名不合法：必须为 1-16 位字母、数字或下划线。".to_string());
+    }
+    if config.selected_version.trim().is_empty() {
+        return Err("未指定 Minecraft 版本号。".to_string());
+    }
+
+    let version_info = load_version_info(&config.game_dir, &config.selected_version)
+        .map_err(|e| format!("无法读取版本 '{}' 的 JSON 元数据: {e}", config.selected_version))?;
+
+    let account = if config.offline_mode {
+        Account::new_offline(&config.player_name)
+    } else {
+        Account::Offline {
+            username: config.player_name.clone(),
+            uuid: "00000000-0000-0000-0000-000000000000".to_string(),
+        }
+    };
+
+    let ctx = LaunchContext {
+        config,
+        version: &version_info,
+        account: &account,
+    };
+
+    spawn_game(&ctx).map_err(|e| format!("启动游戏子进程失败: {e}"))
 }
