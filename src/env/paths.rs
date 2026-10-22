@@ -74,6 +74,11 @@ pub fn version_saves_dir(game_dir: &Path, version_id: &str) -> PathBuf {
     version_dir(game_dir, version_id).join("saves")
 }
 
+/// Returns the version-specific `shaderpacks` directory: `{game_dir}/versions/{version_id}/shaderpacks`.
+pub fn version_shaderpacks_dir(game_dir: &Path, version_id: &str) -> PathBuf {
+    version_dir(game_dir, version_id).join("shaderpacks")
+}
+
 /// Returns the `libraries` directory inside the given game directory.
 pub fn libraries_dir(game_dir: &Path) -> PathBuf {
     game_dir.join("libraries")

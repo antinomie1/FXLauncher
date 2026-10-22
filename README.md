@@ -14,6 +14,10 @@ FXLauncher 是一个采用 **Rust 2024** 编写的跨平台轻量化 Minecraft �
   - `account`：离线模式（RFC 4122 v3 UUID 派生）与在线认证账户模型。
   - `version`：解析 Minecraft `version.json`，支持操作系统规则过滤与类路径装配。
   - `launch`：参数占位符替换、JVM 参数构建与子进程管理。
+  - `loader`：自动检测实例的模组加载器（Fabric、Forge、NeoForge、Quilt）与 OptiFine。
+  - `mods`：实例专属模组列表、开启/关闭切换（`.disabled`）、删除与兼容性/冲突分析。
+  - `shaders`：光影包列表、当前激活检测、激活切换（`optionsshaders.txt`）与删除。
+  - `saves`：世界地图存档列表、计算大小、备份复制、重命名与删除。
 - **`net`**：
   - `client`：HTTP GET 请求、JSON 提取与参数编码统一轻量封装。
   - `task`：全局非阻塞下载任务管理器，支持状态查询、即时网速、进度更新、暂停、恢复、取消及 SHA-1 校验。

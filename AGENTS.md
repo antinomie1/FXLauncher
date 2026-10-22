@@ -44,7 +44,11 @@ fxlauncher/
 │   │   ├── account.rs   # 离线与在线账户模型、UUID 派生
 │   │   ├── config.rs    # 启动器配置存储与持久化 (JSON)
 │   │   ├── version.rs   # version.json 解析与类路径装配
-│   │   └── launch.rs    # 启动命令组装、JVM 参数与进程管理
+│   │   ├── launch.rs    # 启动命令组装、JVM 参数与进程管理
+│   │   ├── loader.rs    # 模组加载器检测 (Fabric, Forge, NeoForge, Quilt, OptiFine)
+│   │   ├── mods.rs      # 实例模组管理 (开启/关闭/删除/冲突诊断)
+│   │   ├── shaders.rs   # 光影包管理与激活切换 (optionsshaders.txt)
+│   │   └── saves.rs     # 地图存档管理 (列表/大小/备份/重命名/删除)
 │   ├── net/             # 网络、任务管理与内容下载
 │   │   ├── client.rs    # HTTP 请求与参数编码轻量封装
 │   │   ├── task.rs      # 全局非阻塞任务管理与 SHA-1 校验
@@ -63,8 +67,9 @@ fxlauncher/
     ├── launch_test.rs       # 启动命令与参数拼装测试
     ├── task_test.rs         # 任务生命周期与文件哈希测试
     ├── downloader_test.rs   # 下载地址转换与版本目录测试
-    ├── mod_manager_test.rs  # 模组目录与扫描测试
-    └── diag_test.rs         # 日志过滤、崩溃报告解析与原因推断测试
+    ├── mod_manager_test.rs       # 模组目录与扫描测试
+    ├── instance_content_test.rs  # 加载器检测、模组启闭、光影与存档管理测试
+    └── diag_test.rs              # 日志过滤、崩溃报告解析与原因推断测试
 ```
 
 ---
@@ -75,6 +80,6 @@ fxlauncher/
 # 代码检查
 cargo check
 
-# 运行全套测试 (39 个分离集成测试)
+# 运行全套测试 (45 个分离集成测试)
 cargo test
 ```
