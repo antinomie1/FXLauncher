@@ -37,15 +37,23 @@ fxlauncher/
 ├── src/                 # 后端核心源码
 │   ├── lib.rs           # 库导出与公共模块暴露
 │   ├── main.rs          # 最小入口
-│   ├── paths.rs         # 跨平台路径计算 (.minecraft, Java)
-│   ├── config.rs        # 启动器配置存储与加载 (JSON)
-│   ├── account.rs       # 离线与在线账户模型、UUID 派生
-│   ├── java.rs          # Java 探测、版本提取与版本兼容性匹配
-│   ├── version.rs       # Minecraft version.json 解析与类路径装配
-│   ├── launch.rs        # 启动命令组装、JVM 参数与进程管理
-│   ├── task.rs          # 全局非阻塞任务管理与 SHA-1 校验
-│   ├── downloader.rs    # 游戏版本下载与目录初始化
-│   └── mod_manager.rs   # 模组搜索与下载管理
+│   ├── env/             # 环境探测与平台路径
+│   │   ├── paths.rs     # 跨平台路径计算与版本子目录辅助函数
+│   │   └── java.rs      # Java 探测、版本提取与版本兼容匹配
+│   ├── game/            # 游戏核心模型与运行
+│   │   ├── account.rs   # 离线与在线账户模型、UUID 派生
+│   │   ├── config.rs    # 启动器配置存储与持久化 (JSON)
+│   │   ├── version.rs   # version.json 解析与类路径装配
+│   │   └── launch.rs    # 启动命令组装、JVM 参数与进程管理
+│   ├── net/             # 网络、任务管理与内容下载
+│   │   ├── client.rs    # HTTP 请求与参数编码轻量封装
+│   │   ├── task.rs      # 全局非阻塞任务管理与 SHA-1 校验
+│   │   ├── download.rs  # 游戏核心与版本元数据下载 (官方 + BMCLAPI)
+│   │   └── mods.rs      # 模组搜索与下载管理 (Modrinth + CurseForge)
+│   └── diag/            # 诊断、日志与崩溃分析
+│       ├── log.rs       # 日志行解析与错误过滤
+│       ├── crash.rs     # 标准崩溃报告结构化解析
+│       └── analyzer.rs  # 内存溢出、Java不匹配、依赖缺失、冲突分析
 └── tests/               # 独立测试集合 (与 src 完全分离)
     ├── paths_test.rs        # 路径解析测试
     ├── account_test.rs      # 账户与 UUID 测试
@@ -53,9 +61,10 @@ fxlauncher/
     ├── java_test.rs         # Java 输出解析与兼容测试
     ├── version_test.rs      # 版本 JSON 与规则测试
     ├── launch_test.rs       # 启动命令与参数拼装测试
-    ├── task_test.rs         # 任务生命周期测试
+    ├── task_test.rs         # 任务生命周期与文件哈希测试
     ├── downloader_test.rs   # 下载地址转换与版本目录测试
-    └── mod_manager_test.rs  # 模组目录与扫描测试
+    ├── mod_manager_test.rs  # 模组目录与扫描测试
+    └── diag_test.rs         # 日志过滤、崩溃报告解析与原因推断测试
 ```
 
 ---
@@ -66,6 +75,6 @@ fxlauncher/
 # 代码检查
 cargo check
 
-# 运行全套测试
+# 运行全套测试 (39 个分离集成测试)
 cargo test
 ```

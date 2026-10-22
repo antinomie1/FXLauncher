@@ -1,10 +1,12 @@
 //! FXLauncher: A lightweight cross-platform Minecraft launcher backend.
 
+pub mod diag;
 pub mod env;
 pub mod game;
 pub mod net;
 
 // Top-level aliases for backwards compatibility with tests and callers
+pub use diag as diagnostics;
 pub use env::paths;
 pub use env::java;
 pub use game::account;
@@ -15,6 +17,7 @@ pub use net::download as downloader;
 pub use net::mods as mod_manager;
 pub use net::task;
 
+pub use diag::{AnalysisReport, CrashCause, CrashReport, CrashSeverity, LogEntry, LogLevel, analyze_crash_text, analyze_latest_crash, extract_error_logs, find_latest_crash_report, parse_crash_report, parse_log_line};
 pub use env::java::{JavaError, JavaInfo, extract_major_version, find_system_java_candidates, parse_java_version, probe_java_binary, required_java_major};
 pub use env::paths::{arch_name, assets_dir, classpath_separator, default_minecraft_dir, libraries_dir, natives_dir, os_name, version_dir, version_mods_dir, versions_dir};
 pub use game::account::{Account, offline_uuid};
