@@ -19,6 +19,9 @@ fn test_account_creation_and_properties() {
     assert_eq!(acc.access_token(), "0");
     assert_eq!(acc.user_type(), "legacy");
 
+    let from_cred = Account::from_credentials("Steve", true);
+    assert_eq!(acc, from_cred);
+
     let ms_acc = Account::Microsoft {
         username: "Alex".to_string(),
         uuid: "12345678-1234-1234-1234-123456789abc".to_string(),

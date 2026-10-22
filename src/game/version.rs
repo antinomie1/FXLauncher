@@ -1,6 +1,6 @@
 //! Minecraft version metadata parsing, rule evaluation, and library classpath calculation.
 
-use crate::paths::{libraries_dir, os_name, versions_dir};
+use crate::env::paths::{libraries_dir, os_name, version_jar_path, version_json_path, versions_dir};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -66,7 +66,7 @@ pub struct Artifact {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rule {
-    pub action: String, // "allow" or "disallow"
+    pub action: String,
     pub os: Option<OsRule>,
 }
 
@@ -103,8 +103,6 @@ pub enum ArgumentValue {
 }
 
 /// Evaluates a list of rules against the current OS.
-/// Minecraft default policy: if no rules are present, action is allowed.
-/// If rules are present, last matching rule determines allow/disallow (starts with disallowed if rules exist).
 pub fn evaluate_rules(rules: &[Rule], current_os: &str) -> bool {
     if rules.is_empty() {
         return true;
@@ -157,7 +155,7 @@ pub fn scan_local_versions(game_dir: &Path) -> Vec<String> {
         for entry in entries.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 let id = entry.file_name().to_string_lossy().to_string();
-                let json_path = entry.path().join(format!("{id}.json"));
+                let json_path = version_json_path(game_dir, &id);
                 if json_path.is_file() {
                     versions.push(id);
                 }
@@ -171,9 +169,7 @@ pub fn scan_local_versions(game_dir: &Path) -> Vec<String> {
 
 /// Loads and parses a version's JSON file.
 pub fn load_version_info(game_dir: &Path, version_id: &str) -> Result<VersionInfo, VersionError> {
-    let json_path = versions_dir(game_dir)
-        .join(version_id)
-        .join(format!("{version_id}.json"));
+    let json_path = version_json_path(game_dir, version_id);
 
     if !json_path.is_file() {
         return Err(VersionError::NotFound(version_id.to_string()));
@@ -197,7 +193,6 @@ pub fn collect_classpaths(game_dir: &Path, info: &VersionInfo) -> Vec<PathBuf> {
             }
         }
 
-        // Try downloads.artifact.path first, then fallback to maven name conversion
         let rel_path = lib
             .downloads
             .as_ref()
@@ -210,11 +205,6 @@ pub fn collect_classpaths(game_dir: &Path, info: &VersionInfo) -> Vec<PathBuf> {
         }
     }
 
-    // Add main client jar: versions/{id}/{id}.jar
-    let client_jar = versions_dir(game_dir)
-        .join(&info.id)
-        .join(format!("{}.jar", info.id));
-    paths.push(client_jar);
-
+    paths.push(version_jar_path(game_dir, &info.id));
     paths
 }

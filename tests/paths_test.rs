@@ -1,6 +1,7 @@
 use fxlauncher::paths::{
     arch_name, assets_dir, classpath_separator, default_minecraft_dir, libraries_dir, natives_dir,
-    os_name, versions_dir,
+    os_name, version_config_dir, version_dir, version_jar_path, version_json_path,
+    version_mods_dir, version_saves_dir, versions_dir,
 };
 use std::path::Path;
 
@@ -20,6 +21,30 @@ fn test_subdirectories_paths() {
     assert_eq!(
         natives_dir(game, "1.21.4"),
         Path::new("/custom/mc/versions/1.21.4/natives")
+    );
+    assert_eq!(
+        version_dir(game, "1.21.4"),
+        Path::new("/custom/mc/versions/1.21.4")
+    );
+    assert_eq!(
+        version_json_path(game, "1.21.4"),
+        Path::new("/custom/mc/versions/1.21.4/1.21.4.json")
+    );
+    assert_eq!(
+        version_jar_path(game, "1.21.4"),
+        Path::new("/custom/mc/versions/1.21.4/1.21.4.jar")
+    );
+    assert_eq!(
+        version_mods_dir(game, "1.21.4"),
+        Path::new("/custom/mc/versions/1.21.4/mods")
+    );
+    assert_eq!(
+        version_config_dir(game, "1.21.4"),
+        Path::new("/custom/mc/versions/1.21.4/config")
+    );
+    assert_eq!(
+        version_saves_dir(game, "1.21.4"),
+        Path::new("/custom/mc/versions/1.21.4/saves")
     );
 }
 

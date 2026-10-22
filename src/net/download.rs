@@ -1,20 +1,21 @@
 //! Minecraft game downloader supporting Official Mojang and BMCLAPI mirrors.
 
-use crate::task::{TaskHandle, TaskManager, spawn_download_task};
+use crate::env::paths::{ensure_dir, version_dir, version_jar_path, version_json_path};
+use crate::net::client::http_get_json;
+use crate::net::task::{TaskHandle, TaskManager, spawn_download_task};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DownloaderError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Network request failed: {0}")]
-    Network(#[from] Box<ureq::Error>),
-    #[error("Failed to parse JSON response: {0}")]
+    #[error("Network error: {0}")]
+    Network(#[from] crate::net::client::HttpError),
+    #[error("Failed to serialize/deserialize JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Version '{0}' not found in manifest")]
     VersionNotFound(String),
@@ -93,12 +94,7 @@ pub fn manifest_url(source: DownloadSource) -> &'static str {
 /// Fetches the version manifest from the selected mirror.
 pub fn fetch_version_manifest(source: DownloadSource) -> Result<VersionManifest, DownloaderError> {
     let url = manifest_url(source);
-    let resp = ureq::get(url)
-        .timeout(Duration::from_secs(15))
-        .call()
-        .map_err(|e| DownloaderError::Network(Box::new(e)))?;
-
-    let manifest: VersionManifest = resp.into_json()?;
+    let manifest: VersionManifest = http_get_json(url)?;
     Ok(manifest)
 }
 
@@ -108,31 +104,21 @@ pub fn fetch_version_json(
     source: DownloadSource,
 ) -> Result<serde_json::Value, DownloaderError> {
     let url = transform_url(&manifest_entry.url, source);
-    let resp = ureq::get(&url)
-        .timeout(Duration::from_secs(15))
-        .call()
-        .map_err(|e| DownloaderError::Network(Box::new(e)))?;
-
-    let val: serde_json::Value = resp.into_json()?;
+    let val: serde_json::Value = http_get_json(&url)?;
     Ok(val)
 }
 
 /// Sets up version directory structure (mods, config, saves).
 pub fn setup_isolated_version_dir(game_dir: &Path, version_id: &str) -> std::io::Result<PathBuf> {
-    let ver_dir = game_dir.join("versions").join(version_id);
-    let mods_dir = ver_dir.join("mods");
-    let config_dir = ver_dir.join("config");
-    let saves_dir = ver_dir.join("saves");
-
-    fs::create_dir_all(&ver_dir)?;
-    fs::create_dir_all(&mods_dir)?;
-    fs::create_dir_all(&config_dir)?;
-    fs::create_dir_all(&saves_dir)?;
-
-    Ok(ver_dir)
+    let v_dir = version_dir(game_dir, version_id);
+    ensure_dir(&v_dir)?;
+    ensure_dir(&crate::env::paths::version_mods_dir(game_dir, version_id))?;
+    ensure_dir(&crate::env::paths::version_config_dir(game_dir, version_id))?;
+    ensure_dir(&crate::env::paths::version_saves_dir(game_dir, version_id))?;
+    Ok(v_dir)
 }
 
-/// Schedules a background download task for client.jar and saves the version JSON in the isolated directory.
+/// Schedules a background download task for client.jar and saves the version JSON in the target version directory.
 pub fn install_version(
     game_dir: &Path,
     version_id: &str,
@@ -147,10 +133,10 @@ pub fn install_version(
         .ok_or_else(|| DownloaderError::VersionNotFound(version_id.to_string()))?;
 
     let ver_json_value = fetch_version_json(entry, source)?;
-    let ver_dir = setup_isolated_version_dir(game_dir, version_id)?;
+    setup_isolated_version_dir(game_dir, version_id)?;
 
     // 1. Write the version json: .minecraft/versions/{version_id}/{version_id}.json
-    let json_dest = ver_dir.join(format!("{version_id}.json"));
+    let json_dest = version_json_path(game_dir, version_id);
     let json_pretty = serde_json::to_string_pretty(&ver_json_value)?;
     fs::write(&json_dest, json_pretty)?;
 
@@ -169,7 +155,7 @@ pub fn install_version(
         .and_then(|s| s.as_str())
         .map(|s| s.to_string());
 
-    let client_jar_dest = ver_dir.join(format!("{version_id}.jar"));
+    let client_jar_dest = version_jar_path(game_dir, version_id);
     let final_url = transform_url(client_url, source);
 
     // 3. Create managed task and spawn background worker

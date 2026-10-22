@@ -198,6 +198,21 @@ impl TaskManager {
     }
 }
 
+/// Computes the SHA-1 hexadecimal checksum of a file.
+pub fn compute_file_sha1(path: &Path) -> std::io::Result<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha1::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 /// Downloads a file in chunks while reporting progress and responding to pause/cancel signals.
 pub fn download_file_with_task(
     url: &str,
@@ -208,7 +223,7 @@ pub fn download_file_with_task(
     *task.status.lock().unwrap() = TaskStatus::Running;
 
     if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
+        crate::env::paths::ensure_dir(parent)?;
     }
 
     let temp_dest = dest.with_extension(format!(
@@ -261,7 +276,7 @@ pub fn download_file_with_task(
     };
 
     let mut reader = resp.into_reader();
-    let mut buffer = [0u8; 65536]; // 64 KB buffer
+    let mut buffer = [0u8; 65536];
     let mut last_speed_check = Instant::now();
     let mut bytes_since_last_check = 0u64;
 
@@ -285,7 +300,7 @@ pub fn download_file_with_task(
         }
 
         let bytes_read = match reader.read(&mut buffer) {
-            Ok(0) => break, // EOF reached
+            Ok(0) => break,
             Ok(n) => n,
             Err(e) => {
                 let err_str = e.to_string();
@@ -315,17 +330,7 @@ pub fn download_file_with_task(
 
     // Verify SHA-1 if provided
     if let Some(expected) = expected_sha1 {
-        let mut check_file = File::open(&temp_dest)?;
-        let mut hasher = Sha1::new();
-        let mut check_buf = [0u8; 65536];
-        loop {
-            let n = check_file.read(&mut check_buf)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&check_buf[..n]);
-        }
-        let actual = format!("{:x}", hasher.finalize());
+        let actual = compute_file_sha1(&temp_dest)?;
         if !actual.eq_ignore_ascii_case(expected) {
             let _ = fs::remove_file(&temp_dest);
             let err = TaskError::ChecksumMismatch {

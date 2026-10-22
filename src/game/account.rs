@@ -29,6 +29,19 @@ impl Account {
         Self::Offline { username, uuid }
     }
 
+    /// Helper to construct account based on username and offline flag.
+    pub fn from_credentials(username: impl Into<String>, offline: bool) -> Self {
+        let username = username.into();
+        if offline {
+            Self::new_offline(username)
+        } else {
+            Self::Offline {
+                username,
+                uuid: "00000000-0000-0000-0000-000000000000".to_string(),
+            }
+        }
+    }
+
     /// Returns the display player name.
     pub fn username(&self) -> &str {
         match self {

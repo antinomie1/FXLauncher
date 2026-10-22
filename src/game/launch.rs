@@ -1,9 +1,11 @@
 //! Minecraft launch command assembly and process management.
 
-use crate::account::Account;
-use crate::config::LauncherConfig;
-use crate::paths::{assets_dir, classpath_separator, natives_dir, os_name};
-use crate::version::{ArgumentItem, ArgumentValue, VersionInfo, collect_classpaths, evaluate_rules, load_version_info};
+use crate::env::paths::{assets_dir, classpath_separator, natives_dir, os_name, version_dir};
+use crate::game::account::Account;
+use crate::game::config::LauncherConfig;
+use crate::game::version::{
+    ArgumentItem, ArgumentValue, VersionInfo, collect_classpaths, evaluate_rules, load_version_info,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -38,7 +40,7 @@ pub fn replace_tokens(template: &str, tokens: &HashMap<&str, String>) -> String 
 /// Assembles token map from launch context.
 pub fn build_token_map(ctx: &LaunchContext<'_>, classpath_str: &str) -> HashMap<&'static str, String> {
     let effective_game_dir = if ctx.config.version_isolation {
-        ctx.config.game_dir.join("versions").join(&ctx.version.id)
+        version_dir(&ctx.config.game_dir, &ctx.version.id)
     } else {
         ctx.config.game_dir.clone()
     };
@@ -72,10 +74,7 @@ pub fn build_token_map(ctx: &LaunchContext<'_>, classpath_str: &str) -> HashMap<
     map.insert("launcher_name", "FXLauncher".to_string());
     map.insert("launcher_version", env!("CARGO_PKG_VERSION").to_string());
     map.insert("classpath", classpath_str.to_string());
-    map.insert(
-        "classpath_separator",
-        classpath_separator().to_string(),
-    );
+    map.insert("classpath_separator", classpath_separator().to_string());
     map
 }
 
@@ -186,7 +185,7 @@ pub fn build_launch_command(ctx: &LaunchContext<'_>) -> Result<Command, LaunchEr
 
     let mut cmd = Command::new(&ctx.config.java_path);
     let effective_game_dir = if ctx.config.version_isolation {
-        ctx.config.game_dir.join("versions").join(&ctx.version.id)
+        version_dir(&ctx.config.game_dir, &ctx.version.id)
     } else {
         ctx.config.game_dir.clone()
     };
@@ -217,14 +216,7 @@ pub fn prepare_and_launch(config: &LauncherConfig) -> Result<Child, String> {
     let version_info = load_version_info(&config.game_dir, &config.selected_version)
         .map_err(|e| format!("无法读取版本 '{}' 的 JSON 元数据: {e}", config.selected_version))?;
 
-    let account = if config.offline_mode {
-        Account::new_offline(&config.player_name)
-    } else {
-        Account::Offline {
-            username: config.player_name.clone(),
-            uuid: "00000000-0000-0000-0000-000000000000".to_string(),
-        }
-    };
+    let account = Account::from_credentials(&config.player_name, config.offline_mode);
 
     let ctx = LaunchContext {
         config,

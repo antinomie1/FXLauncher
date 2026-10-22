@@ -1,11 +1,13 @@
 //! Mod management and version-specific mods directory support (Modrinth & CurseForge).
 
-use crate::task::{TaskHandle, TaskManager, spawn_download_task};
+pub use crate::env::paths::version_mods_dir;
+use crate::env::paths::ensure_dir;
+use crate::net::client::{http_get_json, url_encode};
+use crate::net::task::{TaskHandle, TaskManager, spawn_download_task};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,9 +15,7 @@ pub enum ModError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Network error: {0}")]
-    Network(#[from] Box<ureq::Error>),
-    #[error("Failed to parse mod metadata JSON: {0}")]
-    Json(#[from] serde_json::Error),
+    Network(#[from] crate::net::client::HttpError),
     #[error("No compatible file found for version {version} and loader {loader}")]
     NoCompatibleFile { version: String, loader: String },
 }
@@ -41,12 +41,6 @@ impl ModLoader {
             Self::Quilt => "quilt",
         }
     }
-}
-
-/// Returns the `mods/` directory for a given version.
-/// Example: `.minecraft/versions/{version_id}/mods/`.
-pub fn version_mods_dir(game_dir: &Path, version_id: &str) -> PathBuf {
-    game_dir.join("versions").join(version_id).join("mods")
 }
 
 /// Metadata about an installed mod.
@@ -89,7 +83,7 @@ pub struct ModSearchResult {
     pub title: String,
     pub description: String,
     pub icon_url: Option<String>,
-    pub source_platform: String, // "modrinth" or "curseforge"
+    pub source_platform: String,
     pub downloads: u64,
 }
 
@@ -151,17 +145,11 @@ pub fn search_modrinth(
 
     let url = format!(
         "https://api.modrinth.com/v2/search?query={}&facets={}",
-        urlencoding(query),
-        urlencoding(&facets)
+        url_encode(query),
+        url_encode(&facets)
     );
 
-    let resp = ureq::get(&url)
-        .set("User-Agent", "fxlauncher/0.1.0")
-        .timeout(Duration::from_secs(10))
-        .call()
-        .map_err(|e| ModError::Network(Box::new(e)))?;
-
-    let data: ModrinthSearchResponse = resp.into_json()?;
+    let data: ModrinthSearchResponse = http_get_json(&url)?;
     let results = data
         .hits
         .into_iter()
@@ -188,17 +176,11 @@ pub fn resolve_modrinth_file(
     let url = format!(
         "https://api.modrinth.com/v2/project/{}/version?game_versions={}&loaders={}",
         project_id_or_slug,
-        urlencoding(&format!(r#"["{mc_version}"]"#)),
-        urlencoding(&format!(r#"["{}"]"#, loader.as_str()))
+        url_encode(&format!(r#"["{mc_version}"]"#)),
+        url_encode(&format!(r#"["{}"]"#, loader.as_str()))
     );
 
-    let resp = ureq::get(&url)
-        .set("User-Agent", "fxlauncher/0.1.0")
-        .timeout(Duration::from_secs(10))
-        .call()
-        .map_err(|e| ModError::Network(Box::new(e)))?;
-
-    let versions: Vec<ModrinthVersion> = resp.into_json()?;
+    let versions: Vec<ModrinthVersion> = http_get_json(&url)?;
     for ver in versions {
         if let Some(file) = ver.files.into_iter().next() {
             return Ok(ModFileInfo {
@@ -233,23 +215,18 @@ struct CurseForgeMod {
     download_count: u64,
 }
 
-/// Searches CurseForge for mods using BMCLAPI's CurseForge mirror.
+/// Searches CurseForge for mods using BMCLAPI's mirror.
 pub fn search_curseforge(
     query: &str,
     mc_version: &str,
 ) -> Result<Vec<ModSearchResult>, ModError> {
     let url = format!(
         "https://bmclapi2.bangbang93.com/curseforge/v1/mods/search?gameId=432&gameVersion={}&searchFilter={}",
-        urlencoding(mc_version),
-        urlencoding(query)
+        url_encode(mc_version),
+        url_encode(query)
     );
 
-    let resp = ureq::get(&url)
-        .timeout(Duration::from_secs(10))
-        .call()
-        .map_err(|e| ModError::Network(Box::new(e)))?;
-
-    let data: CurseForgeSearchResponse = resp.into_json()?;
+    let data: CurseForgeSearchResponse = http_get_json(&url)?;
     let results = data
         .data
         .into_iter()
@@ -275,7 +252,7 @@ pub fn download_mod_to_isolated_version(
     task_manager: &TaskManager,
 ) -> std::io::Result<Arc<TaskHandle>> {
     let mods_dir = version_mods_dir(game_dir, version_id);
-    fs::create_dir_all(&mods_dir)?;
+    ensure_dir(&mods_dir)?;
 
     let dest = mods_dir.join(&file_info.file_name);
     let task = task_manager.create_task(&format!("下载模组: {}", file_info.file_name));
@@ -288,20 +265,4 @@ pub fn download_mod_to_isolated_version(
     );
 
     Ok(task)
-}
-
-/// Simple percent encoder for query parameters without bulky external crates.
-fn urlencoding(input: &str) -> String {
-    let mut out = String::new();
-    for byte in input.bytes() {
-        match byte {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(byte as char);
-            }
-            _ => {
-                out.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    out
 }

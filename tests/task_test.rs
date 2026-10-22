@@ -1,4 +1,17 @@
-use fxlauncher::task::{TaskManager, TaskStatus};
+use fxlauncher::task::{TaskManager, TaskStatus, compute_file_sha1};
+use std::fs;
+use tempfile::tempdir;
+
+#[test]
+fn test_compute_file_sha1() {
+    let dir = tempdir().unwrap();
+    let file = dir.path().join("hello.txt");
+    fs::write(&file, b"hello world\n").unwrap();
+
+    let sha1 = compute_file_sha1(&file).unwrap();
+    // echo -n "hello world\n" | sha1sum -> 22596363b3de40b06f981fb85d82312e8c0ed511
+    assert_eq!(sha1, "22596363b3de40b06f981fb85d82312e8c0ed511");
+}
 
 #[test]
 fn test_task_manager_lifecycle() {

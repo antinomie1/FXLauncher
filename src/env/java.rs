@@ -44,7 +44,6 @@ pub fn parse_java_version(output: &str) -> Option<(String, u32, bool)> {
     if !is_64_bit && (output.contains("32-Bit") || output.contains("i386") || output.contains("x86")) {
         is_64_bit = false;
     } else if !is_64_bit {
-        // Default to system pointer width if not explicitly stated
         is_64_bit = cfg!(target_pointer_width = "64");
     }
 

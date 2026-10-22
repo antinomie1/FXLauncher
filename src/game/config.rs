@@ -1,7 +1,7 @@
 //! Launcher configuration and persistence.
 
-use crate::downloader::DownloadSource;
-use crate::paths::{default_minecraft_dir, libraries_dir, versions_dir};
+use crate::env::paths::{default_minecraft_dir, ensure_dir, libraries_dir, versions_dir};
+use crate::net::download::DownloadSource;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -85,7 +85,7 @@ impl LauncherConfig {
     /// Saves launcher configuration to a JSON file (creates parent dirs if needed).
     pub fn save_to_path(&self, path: &Path) -> Result<(), ConfigError> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            ensure_dir(parent)?;
         }
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json)?;
@@ -94,9 +94,9 @@ impl LauncherConfig {
 
     /// Ensures common game directories exist on disk.
     pub fn ensure_game_directories(&self) -> std::io::Result<()> {
-        fs::create_dir_all(&self.game_dir)?;
-        fs::create_dir_all(versions_dir(&self.game_dir))?;
-        fs::create_dir_all(libraries_dir(&self.game_dir))?;
+        ensure_dir(&self.game_dir)?;
+        ensure_dir(&versions_dir(&self.game_dir))?;
+        ensure_dir(&libraries_dir(&self.game_dir))?;
         Ok(())
     }
 }
