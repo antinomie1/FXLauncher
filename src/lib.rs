@@ -4,6 +4,8 @@ pub mod diag;
 pub mod env;
 pub mod game;
 pub mod net;
+#[cfg(feature = "ui")]
+pub mod ui;
 
 // Top-level aliases for backwards compatibility with tests and callers
 pub use diag as diagnostics;

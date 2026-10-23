@@ -14,6 +14,24 @@ md-5 = "0.10"
 sha1 = "0.10"
 ureq = { version = "2.10", features = ["json"] }
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+aegle = { git = "https://github.com/antinomie1/aegle", optional = true }
+
+[features]
+default = ["ui"]
+# Desktop UI written in aegle markup (src/ui). Disable for a headless backend build.
+ui = ["dep:aegle"]
+
+[[bin]]
+name = "fxlauncher"
+path = "src/main.rs"
+required-features = ["ui"]
 
 [dev-dependencies]
 tempfile = "3.17"
+# Headless UI rendering in tests/ui_test.rs.
+aegle-render-software = { git = "https://github.com/antinomie1/aegle", features = ["text"] }
+png = "0.18"
+
+# Keep the software renderer interactive in debug builds.
+[profile.dev.package."*"]
+opt-level = 2

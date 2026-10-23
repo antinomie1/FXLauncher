@@ -1,0 +1,498 @@
+// FXLauncher main view. Structure and presentation live here; behavior is in Rust behind
+// `host.*` actions, and Rust pushes data back by setting the states declared below.
+use "parts.aegle"
+Column {
+    grow: 1
+
+    // ---- 启动 ----
+    state instances: list<Instance> = []
+    state instance_titles: list<string> = ["无实例"]
+    state current_index: int = 0
+    state current: string = ""
+    state current_title: string = "还没有游戏实例"
+    state current_detail: string = "在「下载」页选择一个 Minecraft 版本，几分钟后就能开始游戏。"
+    state current_stats: string = ""
+    state play_status: string = "就绪"
+    state busy: bool = false
+    state crash_title: string = ""
+    state crash_body: string = ""
+    state task_badge: string = ""
+
+    // ---- 实例 ----
+    state picked: string = ""
+    state picked_title: string = ""
+    state picked_detail: string = ""
+    state picked_vanilla: bool = true
+    state mods: list<ModRow> = []
+    state mods_summary: string = ""
+    state mods_warning: string = ""
+    state shaders: list<ShaderRow> = []
+    state shader_off: bool = true
+    state saves: list<SaveRow> = []
+    state diagnosis: string = "游戏异常退出后，在这里分析崩溃报告与日志。"
+
+    // ---- 下载 ----
+    state versions: list<GameVersion> = []
+    state version_status: string = "正在获取版本列表…"
+    state chosen: string = ""
+    state install_title: string = "选择要安装的版本"
+    state loader: int = 0
+    state loader_status: string = ""
+    state loader_items: list<string> = ["正在获取…"]
+    state loader_index: int = 0
+    state install_status: string = ""
+    state hits: list<ModHit> = []
+    state search_status: string = "输入关键词后按回车，在 Modrinth 上搜索适用于当前实例的模组。"
+    state mod_target: string = ""
+
+    // ---- 任务 ----
+    state tasks: list<Task> = []
+
+    // ---- 设置 ----
+    state memory: float = 4096
+    state source: int = 0
+    state theme_mode: int = 0
+    state isolation: bool = true
+    state javas: list<JavaRow> = []
+    state java_current: string = ""
+    state java_status: string = ""
+    state saved_hint: string = ""
+
+    // ---- 确认对话框 ----
+    state confirm_open: bool = false
+    state confirm_text: string = ""
+
+    // Header: wordmark and the running-task badge.
+    Row {
+        padding: [12dp, 24dp]
+        gap: 12dp
+        align: center
+        Text { text: "FXLauncher"; font_size: 20dp; grow: 1 }
+        Text { text: saved_hint; foreground: token("theme.muted"); visible: saved_hint != "" }
+        Button { text: task_badge; visible: task_badge != ""; tooltip: "查看任务"; on clicked { host.goto(3) } }
+    }
+
+    Tabs {
+        id: tabs
+        grow: 1
+        padding: [0dp, 12dp]
+
+        Tab {
+            title: "启动"
+            Column {
+                grow: 1
+                padding: [24dp, 12dp]
+                gap: 16dp
+
+                // Hero: the instance that the launch button starts.
+                Column {
+                    grow: 1
+                    padding: 32dp
+                    gap: 8dp
+                    justify: end
+                    background_gradient: linear(120, #14300F, #3C8527)
+                    Text { text: "当前实例"; foreground: #CFE8C4 }
+                    Text { text: current_title; font_size: 32dp; foreground: #FFFFFF }
+                    Text { text: current_detail; foreground: #E3F1DC }
+                    Text { text: current_stats; font_size: 12dp; foreground: #B9D9AC; visible: current_stats != "" }
+                    Row {
+                        visible: current == ""
+                        margin: [8dp, 0dp, 0dp, 0dp]
+                        Button { text: "安装游戏"; on clicked { host.goto(2) } }
+                    }
+                }
+
+                // Shown after the game exits abnormally.
+                Column {
+                    visible: crash_title != ""
+                    padding: 16dp
+                    gap: 6dp
+                    background: token("theme.surface")
+                    border_color: #D13438
+                    border_width: 1dp
+                    Row {
+                        gap: 8dp
+                        align: center
+                        Text { text: crash_title; font_size: 16dp; grow: 1 }
+                        Button { text: "查看诊断"; on clicked { host.show_diagnosis() } }
+                        Button { text: "关闭"; on clicked { crash_title = "" } }
+                    }
+                    Text { text: crash_body }
+                }
+
+                // Launch bar.
+                Row {
+                    gap: 16dp
+                    align: end
+                    Column {
+                        gap: 4dp
+                        Text { text: "玩家名"; font_size: 12dp; foreground: token("theme.muted") }
+                        TextField { id: player; text: ""; width: 180dp; label: "玩家名"; on changed { host.set_player(self.text) } }
+                    }
+                    Column {
+                        gap: 4dp
+                        grow: 1
+                        Text { text: "实例"; font_size: 12dp; foreground: token("theme.muted") }
+                        Dropdown {
+                            items: instance_titles
+                            selected: current_index
+                            max_width: 360dp
+                            label: "选择实例"
+                            enabled: len(instances) > 0
+                            on changed { host.pick_current(self.selected) }
+                        }
+                    }
+                    Column {
+                        gap: 4dp
+                        align: end
+                        Text { text: play_status; font_size: 12dp; foreground: token("theme.muted") }
+                        Button {
+                            id: launch
+                            text: "启动游戏"
+                            width: 200dp
+                            height: 48dp
+                            font_size: 16dp
+                            enabled: !busy && current != ""
+                            on clicked { host.launch() }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "实例"
+            Row {
+                grow: 1
+                Column {
+                    width: 280dp
+                    padding: 16dp
+                    gap: 8dp
+                    background: token("theme.surface")
+                    Text { text: "本地实例"; font_size: 16dp }
+                    Text { text: "还没有实例"; foreground: token("theme.muted"); visible: len(instances) == 0 }
+                    ScrollView {
+                        border_width: 0dp
+                        grow: 1
+                        TreeView {
+                            for inst in instances key inst.id {
+                                TreeNode {
+                                    text: inst.title
+                                    tooltip: inst.detail
+                                    selected: inst.id == picked
+                                    on selected { host.pick_instance(inst.id) }
+                                }
+                            }
+                        }
+                    }
+                    Button { text: "安装新实例"; on clicked { host.goto(2) } }
+                }
+                Column {
+                    grow: 1
+                    padding: 24dp
+                    gap: 12dp
+                    Text { text: "在左侧选择一个实例"; foreground: token("theme.muted"); visible: picked == "" }
+                    Row {
+                        visible: picked != ""
+                        gap: 12dp
+                        align: center
+                        Column {
+                            grow: 1
+                            gap: 4dp
+                            Text { text: picked_title; font_size: 24dp }
+                            Text { text: picked_detail; foreground: token("theme.muted") }
+                        }
+                        Button { text: "设为当前实例"; enabled: picked != current; on clicked { host.use_picked() } }
+                        Button { text: "刷新"; on clicked { host.refresh_instance() } }
+                    }
+                    Tabs {
+                        id: instance_tabs
+                        visible: picked != ""
+                        grow: 1
+                        Tab {
+                            title: "模组"
+                            Column {
+                                grow: 1
+                                padding: [12dp, 0dp]
+                                gap: 8dp
+                                Text { text: "原版实例不能加载模组。安装 Fabric、Quilt、Forge 或 NeoForge 实例后再来这里管理模组。"; visible: picked_vanilla; foreground: token("theme.muted") }
+                                Row {
+                                    visible: !picked_vanilla
+                                    gap: 8dp
+                                    align: center
+                                    Text { text: mods_summary; grow: 1 }
+                                    Button { text: "搜索模组"; on clicked { host.goto_mod_search() } }
+                                }
+                                Text { text: mods_warning; visible: mods_warning != ""; foreground: #D13438 }
+                                ScrollView {
+                                    border_width: 0dp
+                                    grow: 1
+                                    gap: 4dp
+                                    for m in mods key m.file { ModItem { m: m } }
+                                }
+                            }
+                        }
+                        Tab {
+                            title: "光影"
+                            Column {
+                                grow: 1
+                                padding: [12dp, 0dp]
+                                gap: 8dp
+                                Text { text: "光影需要 Iris 或 OptiFine。把光影包放进实例的 shaderpacks 文件夹后点击刷新。"; foreground: token("theme.muted") }
+                                RadioButton { text: "关闭光影"; checked: shader_off; on changed { host.set_shader("") } }
+                                ScrollView {
+                                    border_width: 0dp
+                                    grow: 1
+                                    gap: 4dp
+                                    for s in shaders key s.name { ShaderItem { s: s } }
+                                }
+                            }
+                        }
+                        Tab {
+                            title: "存档"
+                            Column {
+                                grow: 1
+                                padding: [12dp, 0dp]
+                                gap: 8dp
+                                Text { text: "还没有存档"; visible: len(saves) == 0; foreground: token("theme.muted") }
+                                ScrollView {
+                                    border_width: 0dp
+                                    grow: 1
+                                    gap: 8dp
+                                    for s in saves key s.folder { SaveItem { s: s } }
+                                }
+                            }
+                        }
+                        Tab {
+                            title: "诊断"
+                            Column {
+                                grow: 1
+                                padding: [12dp, 0dp]
+                                gap: 12dp
+                                Row { Button { text: "分析最近一次崩溃"; on clicked { host.analyze() } } }
+                                ScrollView { grow: 1; border_width: 0dp; Text { text: diagnosis } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "下载"
+            Tabs {
+                id: download_tabs
+                grow: 1
+                Tab {
+                    title: "游戏"
+                    Row {
+                        grow: 1
+                        Column {
+                            width: 300dp
+                            padding: 16dp
+                            gap: 8dp
+                            background: token("theme.surface")
+                            Text { text: "搜索版本"; font_size: 12dp; foreground: token("theme.muted") }
+                            TextField { id: version_search; text: ""; label: "搜索版本"; on changed { host.filter_versions(self.text) } }
+                            Switch { text: "显示快照版"; checked: false; on changed { host.set_snapshots(self.checked) } }
+                            Text { text: version_status; visible: version_status != ""; foreground: token("theme.muted") }
+                            ScrollView {
+                                border_width: 0dp
+                                grow: 1
+                                TreeView {
+                                    for v in versions key v.id {
+                                        TreeNode {
+                                            text: v.id
+                                            tooltip: v.detail
+                                            selected: v.id == chosen
+                                            on selected { host.pick_version(v.id) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        ScrollView {
+                            border_width: 0dp
+                            grow: 1
+                            Column {
+                                padding: 24dp
+                                gap: 20dp
+                                Text { text: install_title; font_size: 24dp }
+                                Section {
+                                    title: "模组加载器"
+                                    Row {
+                                        gap: 20dp
+                                        wrap: wrap
+                                        RadioButton { text: "原版"; checked: loader == 0; on changed { host.set_loader(0) } }
+                                        RadioButton { text: "Fabric"; checked: loader == 1; on changed { host.set_loader(1) } }
+                                        RadioButton { text: "Quilt"; checked: loader == 2; on changed { host.set_loader(2) } }
+                                        RadioButton { text: "Forge"; checked: loader == 3; on changed { host.set_loader(3) } }
+                                        RadioButton { text: "NeoForge"; checked: loader == 4; on changed { host.set_loader(4) } }
+                                    }
+                                }
+                                Column {
+                                    visible: loader != 0
+                                    Section {
+                                        title: "加载器版本"
+                                        hint: loader_status
+                                        Dropdown {
+                                            items: loader_items
+                                            selected: loader_index
+                                            max_width: 420dp
+                                            label: "加载器版本"
+                                            on changed { loader_index = self.selected }
+                                        }
+                                    }
+                                }
+                                Section {
+                                    title: "实例名称"
+                                    hint: "开启版本隔离时，实例拥有独立的 mods、config 与 saves 文件夹。"
+                                    TextField { id: instance_name; text: ""; max_width: 420dp; label: "实例名称" }
+                                }
+                                Row {
+                                    gap: 16dp
+                                    align: center
+                                    Button { id: install; text: "安装"; width: 160dp; enabled: chosen != ""; on clicked { host.install() } }
+                                    Text { text: install_status; foreground: token("theme.muted") }
+                                }
+                            }
+                        }
+                    }
+                }
+                Tab {
+                    title: "模组"
+                    Column {
+                        grow: 1
+                        padding: [24dp, 12dp]
+                        gap: 12dp
+                        Row {
+                            gap: 8dp
+                            align: center
+                            TextField { id: mod_query; text: ""; grow: 1; label: "搜索 Modrinth 模组"; on submitted { host.search_mods(self.text) } }
+                            Button { text: "搜索"; on clicked { host.search_mods_button() } }
+                        }
+                        Text { text: search_status; foreground: token("theme.muted") }
+                        ScrollView {
+                            border_width: 0dp
+                            grow: 1
+                            gap: 8dp
+                            for hit in hits key hit.id { ModHitCard { hit: hit; target: mod_target } }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "任务"
+            Column {
+                grow: 1
+                padding: [24dp, 12dp]
+                gap: 12dp
+                Row {
+                    gap: 8dp
+                    align: center
+                    Text { text: "下载与安装"; font_size: 20dp; grow: 1 }
+                    Button { text: "清除已结束"; enabled: len(tasks) > 0; on clicked { host.clear_tasks() } }
+                }
+                Text { text: "没有任务。安装游戏或模组后，进度会显示在这里。"; visible: len(tasks) == 0; foreground: token("theme.muted") }
+                ScrollView {
+                    border_width: 0dp
+                    grow: 1
+                    gap: 8dp
+                    for task in tasks key task.id { TaskCard { task: task } }
+                }
+            }
+        }
+
+        Tab {
+            title: "设置"
+            ScrollView {
+                border_width: 0dp
+                grow: 1
+                Column {
+                    padding: [24dp, 12dp]
+                    gap: 28dp
+                    max_width: 760dp
+
+                    Section {
+                        title: "游戏目录"
+                        hint: "版本、依赖库与资源文件的存放位置。修改后按回车或点击应用。"
+                        Row {
+                            gap: 8dp
+                            TextField { id: game_dir; text: ""; grow: 1; label: "游戏目录"; on submitted { host.apply_game_dir() } }
+                            Button { text: "应用"; on clicked { host.apply_game_dir() } }
+                        }
+                        Switch { text: "版本隔离（每个实例使用独立的游戏文件夹）"; checked: isolation; on changed { host.set_isolation(self.checked) } }
+                    }
+
+                    Section {
+                        title: "Java"
+                        hint: "启动时会自动选择满足版本要求的 Java；也可以在这里指定。"
+                        Row {
+                            gap: 8dp
+                            TextField { id: java_path; text: ""; grow: 1; label: "Java 路径"; on changed { host.apply_java() } }
+                            Button { text: "自动检测"; on clicked { host.detect_java() } }
+                        }
+                        Text { text: java_status; visible: java_status != ""; foreground: token("theme.muted") }
+                        Column { for j in javas key j.path { JavaChoice { j: j; selected: java_current } } }
+                    }
+
+                    Column {
+                        gap: 8dp
+                        Row {
+                            Text { text: "最大内存"; font_size: 16dp; grow: 1 }
+                            Text { text: str(int(memory)) + " MB" }
+                        }
+                        Slider { id: memory_slider; min: 1024; max: 32768; value: 4096; step: 512; label: "最大内存"; on changed { memory = self.value; host.set_memory(self.value) } }
+                        Text { text: "JVM 参数"; foreground: token("theme.muted") }
+                        TextField { id: jvm_args; text: ""; label: "额外 JVM 参数，空格分隔"; on changed { host.apply_jvm_args() } }
+                    }
+
+                    Section {
+                        title: "游戏窗口"
+                        Row {
+                            gap: 12dp
+                            align: center
+                            NumberField { id: window_width; min: 320; max: 7680; value: 854; step: 1; decimals: 0; width: 140dp; label: "宽度"; on changed { host.set_window_width(self.value) } }
+                            Text { text: "×" }
+                            NumberField { id: window_height; min: 240; max: 4320; value: 480; step: 1; decimals: 0; width: 140dp; label: "高度"; on changed { host.set_window_height(self.value) } }
+                        }
+                    }
+
+                    Section {
+                        title: "下载源"
+                        hint: "首选源失败时会自动改用另一个。"
+                        RadioButton { text: "BMCLAPI 镜像（中国大陆推荐）"; checked: source == 0; on changed { host.set_source(0) } }
+                        RadioButton { text: "官方源（Mojang）"; checked: source == 1; on changed { host.set_source(1) } }
+                    }
+
+                    Section {
+                        title: "外观"
+                        RadioButton { text: "跟随系统"; checked: theme_mode == 0; on changed { host.set_theme(0) } }
+                        RadioButton { text: "浅色"; checked: theme_mode == 1; on changed { host.set_theme(1) } }
+                        RadioButton { text: "深色"; checked: theme_mode == 2; on changed { host.set_theme(2) } }
+                    }
+
+                    Text { text: "设置会自动保存到 .minecraft/fxlauncher.json。"; font_size: 12dp; foreground: token("theme.muted") }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        title: "请确认"
+        open: confirm_open
+        on closed { confirm_open = false }
+        Column {
+            gap: 16dp
+            Text { text: confirm_text }
+            Row {
+                gap: 8dp
+                justify: end
+                Button { text: "取消"; on clicked { confirm_open = false } }
+                Button { id: confirm_ok; text: "删除"; on clicked { confirm_open = false; host.confirm() } }
+            }
+        }
+    }
+}

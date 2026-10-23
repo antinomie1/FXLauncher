@@ -1,0 +1,110 @@
+// Records filled from Rust (field order matters) and the reusable rows built from them.
+
+record Instance { id: string; title: string; detail: string }
+record GameVersion { id: string; detail: string }
+// state: 0 running/queued, 1 paused, 2 completed, 3 failed, 4 cancelled
+record Task { id: int; title: string; detail: string; percent: float; state: int; error: string }
+record ModRow { file: string; name: string; detail: string; enabled: bool }
+record ShaderRow { name: string; detail: string; active: bool }
+record SaveRow { folder: string; name: string; detail: string }
+record ModHit { id: string; title: string; detail: string; description: string }
+record JavaRow { path: string; detail: string }
+
+// A titled group of controls (settings, install options). Slot content may carry ids.
+component Section(title: string, hint: string = "") {
+    Column {
+        gap: 8dp
+        Text { text: title; font_size: 16dp }
+        Text { text: hint; foreground: token("theme.muted"); visible: hint != "" }
+        slot
+    }
+}
+
+// A download / install task with progress and controls.
+component TaskCard(task: Task) {
+    Column {
+        padding: 16dp
+        gap: 8dp
+        background: token("theme.surface")
+        border_color: token("theme.divider")
+        border_width: 1dp
+        Row {
+            gap: 8dp
+            align: center
+            Text { text: task.title; font_size: 16dp; grow: 1 }
+            Button { text: "暂停"; visible: task.state == 0; on clicked { host.pause_task(task.id) } }
+            Button { text: "继续"; visible: task.state == 1; on clicked { host.resume_task(task.id) } }
+            Button { text: "取消"; visible: task.state <= 1; on clicked { host.cancel_task(task.id) } }
+        }
+        Text { text: task.detail; foreground: token("theme.muted") }
+        Progress { min: 0; max: 100; value: task.percent; visible: task.state <= 1 }
+        Text { text: task.error; visible: task.error != ""; foreground: #D13438 }
+    }
+}
+
+// An installed mod: the switch enables/disables it by renaming the jar.
+component ModItem(m: ModRow) {
+    Row {
+        gap: 12dp
+        align: center
+        Switch { text: m.name; checked: m.enabled; grow: 1; on changed { host.toggle_mod(m.file) } }
+        Text { text: m.detail; font_size: 12dp; foreground: token("theme.muted") }
+        Button { text: "删除"; on clicked { host.delete_mod(m.file) } }
+    }
+}
+
+// A shader pack; choosing it writes optionsshaders.txt.
+component ShaderItem(s: ShaderRow) {
+    Row {
+        gap: 12dp
+        align: center
+        RadioButton { text: s.name; checked: s.active; grow: 1; on changed { host.set_shader(s.name) } }
+        Text { text: s.detail; font_size: 12dp; foreground: token("theme.muted") }
+        Button { text: "删除"; on clicked { host.delete_shader(s.name) } }
+    }
+}
+
+// A world save.
+component SaveItem(s: SaveRow) {
+    Row {
+        gap: 12dp
+        align: center
+        Column {
+            grow: 1
+            Text { text: s.name }
+            Text { text: s.detail; font_size: 12dp; foreground: token("theme.muted") }
+        }
+        Button { text: "备份"; on clicked { host.backup_save(s.folder) } }
+        Button { text: "删除"; on clicked { host.delete_save(s.folder) } }
+    }
+}
+
+// A Modrinth search result.
+component ModHitCard(hit: ModHit, target: string) {
+    Row {
+        padding: 12dp
+        gap: 12dp
+        align: center
+        background: token("theme.surface")
+        border_color: token("theme.divider")
+        border_width: 1dp
+        Column {
+            grow: 1
+            gap: 4dp
+            Text { text: hit.title; font_size: 16dp }
+            Text { text: hit.description; foreground: token("theme.muted") }
+            Text { text: hit.detail; font_size: 12dp; foreground: token("theme.muted") }
+        }
+        Button { text: "安装"; enabled: target != ""; on clicked { host.install_mod(hit.id) } }
+    }
+}
+
+// A detected Java runtime.
+component JavaChoice(j: JavaRow, selected: string) {
+    Row {
+        gap: 8dp
+        align: center
+        RadioButton { text: j.path; checked: j.path == selected; grow: 1; on changed { host.pick_java(j.path) } }
+        Text { text: j.detail; font_size: 12dp; foreground: token("theme.muted") }
+    }
+}
