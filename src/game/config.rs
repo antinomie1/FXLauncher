@@ -31,10 +31,6 @@ pub struct LauncherConfig {
     pub game_dir: PathBuf,
     /// Currently selected version ID (e.g., "1.21.4").
     pub selected_version: String,
-    /// Player display name.
-    pub player_name: String,
-    /// Whether to use offline mode.
-    pub offline_mode: bool,
     /// Path or command name for the Java binary.
     pub java_path: String,
     /// Minimum JVM memory in megabytes (e.g. 1024).
@@ -67,8 +63,6 @@ impl Default for LauncherConfig {
         Self {
             game_dir: default_minecraft_dir(),
             selected_version: "1.21.4".to_string(),
-            player_name: "Steve".to_string(),
-            offline_mode: true,
             java_path: "java".to_string(),
             min_memory_mb: 1024,
             max_memory_mb: 4096,

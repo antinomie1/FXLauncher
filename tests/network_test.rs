@@ -95,3 +95,26 @@ fn network_forge_and_neoforge_until_processors() {
         assert!(task.snapshot().stage.starts_with("运行安装处理器 1/"));
     }
 }
+
+/// The Azure app accepts device-code sign-ins for personal Microsoft accounts. Signing in
+/// itself needs a person at the browser, so this stops at the first poll.
+#[test]
+#[ignore]
+fn test_microsoft_device_code() {
+    let code = fxlauncher::net::auth::request_device_code().unwrap();
+    println!("device code {} at {}", code.user_code, code.verification_uri);
+    assert!(!code.user_code.is_empty());
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let canceller = thread::spawn({
+        let interval = code.interval;
+        move || thread::sleep(Duration::from_secs(interval + 2))
+    });
+    // One poll must come back "pending", not an app-configuration error; then give up.
+    let result = thread::scope(|s| {
+        let poll = s.spawn(|| fxlauncher::net::auth::poll_device_code(&code, &cancel));
+        canceller.join().unwrap();
+        cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        poll.join().unwrap()
+    });
+    assert!(matches!(result, Err(fxlauncher::net::auth::AuthError::Cancelled)), "{result:?}");
+}

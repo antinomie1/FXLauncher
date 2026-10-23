@@ -44,8 +44,6 @@ fn test_build_launch_command_modern() {
     let config = LauncherConfig {
         game_dir: PathBuf::from("/home/user/.minecraft"),
         selected_version: "1.21.4".to_string(),
-        player_name: "Steve".to_string(),
-        offline_mode: true,
         java_path: "/usr/bin/java".to_string(),
         min_memory_mb: 2048,
         max_memory_mb: 4096,

@@ -5,12 +5,15 @@ use super::{Shell, dark_theme, light_theme};
 use crate::diag::{AnalysisReport, analyze_crash_text, find_latest_crash_report};
 use crate::env::java::select_java;
 use crate::env::paths::version_dir;
+use crate::game::account::{Account, AccountStore};
 use crate::game::config::{LauncherConfig, ThemePreference};
 use crate::game::launch::{prepare_launch_command, required_java_for};
 use crate::game::version::{load_version_info, scan_local_versions};
+use crate::net::auth::{DeviceCode, ensure_fresh};
 use crate::net::download::{DownloadSource, ManifestVersion};
 use crate::net::fabric::LoaderVersion;
 use crate::net::mods::ModSearchResult;
+use crate::net::profile::McProfile;
 use crate::net::task::{TaskManager, TaskStatus};
 use aegle::loader::{State, StateValue};
 use std::cell::RefCell;
@@ -30,6 +33,16 @@ pub enum Msg {
     Launched(Result<String, String>),
     Exited { instance: String, code: Option<i32>, report: Option<AnalysisReport> },
     Tick,
+    /// A device-code sign-in started; the user now enters the code in the browser.
+    DeviceCode(Result<DeviceCode, String>),
+    /// A device-code sign-in finished.
+    SignedIn(Result<Account, String>),
+    /// A saved account was signed in again (refreshed token, possibly a new name).
+    AccountUpdated(Result<Account, String>),
+    /// The Minecraft profile of the account with this UUID, read or just changed.
+    Profile { uuid: String, result: Result<McProfile, String> },
+    /// The PNG texture of that account's active skin.
+    SkinTexture { uuid: String, result: Result<Vec<u8>, String> },
 }
 
 /// Thread-safe sender of [`Msg`] to the UI thread.
@@ -47,10 +60,16 @@ pub(super) enum Deletion {
     Mod(String),
     Shader(String),
     Save(String),
+    Account(String),
 }
 
 pub(super) struct Model {
     pub config: LauncherConfig,
+    pub accounts: AccountStore,
+    /// Set to stop the device-code sign-in in progress.
+    pub login_cancel: Arc<AtomicBool>,
+    /// UUID of the account whose profile the 账户 page shows.
+    pub profile_of: String,
     pub instance_ids: Vec<String>,
     pub manifest: Vec<ManifestVersion>,
     pub snapshots: bool,
@@ -68,6 +87,8 @@ pub struct Controller {
     pub(super) model: RefCell<Model>,
     pub(super) manager: Arc<TaskManager>,
     pub(super) post: Post,
+    /// Whether network requests and the browser may be used (false in headless renders).
+    pub(super) online: bool,
     ticking: Arc<AtomicBool>,
 }
 
@@ -79,9 +100,12 @@ pub(super) fn put<T: StateValue>(state: &State<T>, value: T) {
 }
 
 impl Controller {
-    pub(super) fn new(shell: Shell, config: LauncherConfig, manager: Arc<TaskManager>, post: Post) -> Self {
+    pub(super) fn new(shell: Shell, config: LauncherConfig, accounts: AccountStore, manager: Arc<TaskManager>, post: Post, online: bool) -> Self {
         let model = Model {
             config,
+            accounts,
+            login_cancel: Arc::default(),
+            profile_of: String::new(),
             instance_ids: Vec::new(),
             manifest: Vec::new(),
             snapshots: false,
@@ -93,7 +117,7 @@ impl Controller {
             task_kinds: HashMap::new(),
             finished: HashSet::new(),
         };
-        Self { shell, model: RefCell::new(model), manager, post, ticking: Arc::default() }
+        Self { shell, model: RefCell::new(model), manager, post, online, ticking: Arc::default() }
     }
 
     /// The mounted view's states and named controls.
@@ -106,12 +130,11 @@ impl Controller {
     }
 
     /// Fills controls from the configuration and starts the initial fetches.
-    pub(super) fn init(&self, start: bool) {
+    pub(super) fn init(&self) {
         let cfg = self.config();
         let sh = &self.shell;
-        sh.player.set_text(&cfg.player_name);
-        sh.game_dir.set_text(&cfg.game_dir.to_string_lossy());
-        sh.java_path.set_text(&cfg.java_path);
+        sh.game_dir.set_path(&cfg.game_dir.to_string_lossy());
+        sh.java_path.set_path(&cfg.java_path);
         sh.jvm_args.set_text(&cfg.extra_jvm_args.join(" "));
         sh.memory_slider.set_value(cfg.max_memory_mb as f64);
         put(&sh.memory, cfg.max_memory_mb as f32);
@@ -122,7 +145,8 @@ impl Controller {
         put(&sh.java_current, cfg.java_path.clone());
         self.apply_theme(cfg.theme);
         self.reload_instances(Some(&cfg.selected_version));
-        if start {
+        self.reload_accounts();
+        if self.online {
             self.fetch_manifest();
         }
     }
@@ -161,6 +185,11 @@ impl Controller {
             },
             Msg::Exited { instance, code, report } => self.on_exited(instance, code, report),
             Msg::Tick => self.refresh_tasks(),
+            Msg::DeviceCode(result) => self.on_device_code(result),
+            Msg::SignedIn(result) => self.on_signed_in(result),
+            Msg::AccountUpdated(result) => self.on_account_updated(result),
+            Msg::Profile { uuid, result } => self.on_profile(&uuid, result),
+            Msg::SkinTexture { uuid, result } => self.on_skin_texture(&uuid, result),
         }
     }
 
@@ -223,25 +252,29 @@ impl Controller {
 
     pub(super) fn launch(&self) {
         let sh = &self.shell;
-        let name = sh.player.text().trim().to_string();
-        if !crate::game::account::Account::validate_username(&name) {
-            put(&sh.play_status, "玩家名需为 1–16 位字母、数字或下划线".into());
-            sh.player.focus();
+        let Some(account) = self.model.borrow().accounts.selected().cloned() else {
+            put(&sh.play_status, "请先添加一个账户".into());
+            self.goto(1);
             return;
-        }
+        };
         let instance = sh.current.get();
-        self.update_config(|c| {
-            c.player_name = name;
-            c.selected_version = instance.clone();
-        });
+        self.update_config(|c| c.selected_version = instance.clone());
         put(&sh.busy, true);
         put(&sh.crash_title, String::new());
-        put(&sh.play_status, "正在准备…".into());
+        put(&sh.play_status, if account.is_microsoft() { "正在验证账户…" } else { "正在准备…" }.into());
 
         let mut cfg = self.config();
         let post = self.post.clone();
         thread::spawn(move || {
             let started = SystemTime::now();
+            let account = match ensure_fresh(&account) {
+                Ok(Some(fresh)) => {
+                    post(Msg::AccountUpdated(Ok(fresh.clone())));
+                    fresh
+                }
+                Ok(None) => account,
+                Err(e) => return post(Msg::Launched(Err(format!("正版验证失败：{e}。可在「账户」页重新验证或重新登录。")))),
+            };
             let prepared = (|| -> Result<(std::process::Child, std::path::PathBuf, String), String> {
                 let info = load_version_info(&cfg.game_dir, &instance).map_err(|e| format!("无法读取实例 {instance}：{e}"))?;
                 let java = select_java(&cfg.java_path, required_java_for(&info))?;
@@ -253,7 +286,7 @@ impl Controller {
                 let log_path = logs.join("fxlauncher-output.log");
                 let log = File::create(&log_path).map_err(|e| e.to_string())?;
                 let err_log = log.try_clone().map_err(|e| e.to_string())?;
-                let mut cmd = prepare_launch_command(&cfg)?;
+                let mut cmd = prepare_launch_command(&cfg, &account)?;
                 cmd.stdout(log).stderr(err_log);
                 let child = cmd.spawn().map_err(|e| format!("无法启动 Java（{}）：{e}", cfg.java_path))?;
                 Ok((child, log_path, java_label))

@@ -223,8 +223,8 @@ pub fn spawn_game(ctx: &LaunchContext<'_>) -> Result<Child, LaunchError> {
 }
 
 /// Prepares launch context and spawns Minecraft, returning either the Child process or an error message.
-pub fn prepare_and_launch(config: &LauncherConfig) -> Result<Child, String> {
-    prepare_launch_command(config)?
+pub fn prepare_and_launch(config: &LauncherConfig, account: &Account) -> Result<Child, String> {
+    prepare_launch_command(config, account)?
         .spawn()
         .map_err(|e| format!("启动游戏子进程失败: {e}"))
 }
@@ -238,8 +238,9 @@ pub fn required_java_for(info: &VersionInfo) -> u32 {
 }
 
 /// Validates the configuration, extracts natives and builds the launch command without spawning it.
-pub fn prepare_launch_command(config: &LauncherConfig) -> Result<Command, String> {
-    if !Account::validate_username(&config.player_name) {
+/// A Microsoft account's token must already be fresh (see [`crate::net::auth::ensure_fresh`]).
+pub fn prepare_launch_command(config: &LauncherConfig, account: &Account) -> Result<Command, String> {
+    if !account.is_microsoft() && !Account::validate_username(account.username()) {
         return Err("玩家用户名不合法：必须为 1-16 位字母、数字或下划线。".to_string());
     }
     if config.selected_version.trim().is_empty() {
@@ -253,12 +254,10 @@ pub fn prepare_launch_command(config: &LauncherConfig) -> Result<Command, String
     extract_natives(&config.game_dir, &version_info)
         .map_err(|e| format!("解压本地库失败: {e}"))?;
 
-    let account = Account::from_credentials(&config.player_name, config.offline_mode);
-
     let ctx = LaunchContext {
         config,
         version: &version_info,
-        account: &account,
+        account,
     };
 
     build_launch_command(&ctx).map_err(|e| format!("无法组装启动命令: {e}"))

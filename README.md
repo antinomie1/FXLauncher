@@ -11,7 +11,7 @@ FXLauncher 是一个采用 **Rust 2024** 编写的跨平台轻量化 Minecraft �
   - `java`：扫描系统 Java 安装路径，解析主版本号并计算版本兼容性。
 - **`game`**：
   - `config`：启动器配置管理，支持 JSON 持久化、版本隔离开关与下载源切换。
-  - `account`：离线模式（RFC 4122 v3 UUID 派生）与在线认证账户模型。
+  - `account`：离线账户（RFC 4122 v3 UUID 派生）与微软账户模型，以及保存在 `.minecraft/fxlauncher_accounts.json` 的账户列表（Unix 上仅本人可读）。
   - `version`：解析 Minecraft `version.json`，合并 `inheritsFrom` 继承链（Fabric/Forge 配置），按操作系统、架构与启动器特性过滤规则，装配类路径。
   - `natives`：将 LWJGL 等本地库解压到 `versions/<id>/natives`（兼容旧版 `natives` 分类与 1.19+ 的 `natives-*` 构件）。
   - `launch`：参数占位符替换、JVM 参数构建与子进程管理。
@@ -21,6 +21,8 @@ FXLauncher 是一个采用 **Rust 2024** 编写的跨平台轻量化 Minecraft �
   - `saves`：世界地图存档列表、计算大小、备份复制、重命名与删除。
 - **`net`**：
   - `client`：HTTP GET 请求、JSON 提取与参数编码统一轻量封装。
+  - `auth`：微软账户正版验证：设备码 OAuth → Xbox Live → XSTS → Minecraft 服务，校验游戏所有权，启动前自动刷新令牌。
+  - `profile`：Minecraft 档案管理：读取档案、修改玩家名、上传/重置皮肤与切换模型、切换披风。
   - `task`：全局非阻塞任务管理器，支持阶段、文件数、即时网速、暂停、恢复、取消及 SHA-1 校验。
   - `batch`：多线程批量下载；已存在且校验通过的文件自动跳过，所选源失败时回退到另一个源。
   - `download`：Mojang 官方源与 BMCLAPI 镜像源的地址映射（含 Forge、NeoForge、Fabric、Quilt 的 Maven 与元数据服务器），版本清单获取。
@@ -39,11 +41,12 @@ FXLauncher 是一个采用 **Rust 2024** 编写的跨平台轻量化 Minecraft �
 
 界面结构写在 `src/ui/main.aegle` 与 `src/ui/parts.aegle` 中，Rust 通过 `host.*` 动作实现行为：
 
-- **启动**：当前实例展示、玩家名、实例切换与启动按钮；自动选择满足版本要求的 Java；游戏异常退出时显示崩溃诊断。
+- **启动**：当前实例展示、账户与实例切换、启动按钮；自动选择满足版本要求的 Java；游戏异常退出时显示崩溃诊断。
+- **账户**：微软账户登录（设备码，自动打开浏览器并填入代码）与离线账户；正版账户显示皮肤正面预览，可修改玩家名、选择并上传皮肤、切换披风。
 - **实例**：本地实例列表；模组开关与删除、光影切换、存档备份与删除、崩溃分析。
 - **下载**：选择游戏版本与加载器（原版 / Fabric / Quilt / Forge / NeoForge）安装实例；在 Modrinth 上搜索并安装模组。
 - **任务**：下载与安装进度，支持暂停、继续与取消。
-- **设置**：游戏目录、版本隔离、Java、内存、窗口尺寸、下载源与深浅色主题，修改后自动保存到 `.minecraft/fxlauncher.json`。
+- **设置**：左侧分类导航（游戏 / Java 与内存 / 下载 / 外观），右侧是该分类的选项：游戏目录、版本隔离、窗口尺寸、Java、内存、JVM 参数、下载源与深浅色主题，修改后自动保存到 `.minecraft/fxlauncher.json`。
 
 Linux 构建需要 libxkbcommon 与 fontconfig 的开发文件；目前 aegle 支持 Wayland 与 Windows。只需要后端库时可以关闭界面：`--no-default-features`。
 

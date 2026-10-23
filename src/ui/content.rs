@@ -42,7 +42,7 @@ pub(super) fn format_report(r: &AnalysisReport) -> String {
 }
 
 impl Controller {
-    /// Shows a top-level page: 0 启动, 1 实例, 2 下载, 3 任务, 4 设置.
+    /// Shows a top-level page: 0 启动, 1 账户, 2 实例, 3 下载, 4 任务, 5 设置.
     pub fn goto(&self, page: usize) {
         self.shell.tabs.select(page);
     }
@@ -113,6 +113,11 @@ impl Controller {
             Deletion::Mod(f) => format!("删除模组 {f}？文件会被永久删除。"),
             Deletion::Shader(f) => format!("删除光影包 {f}？文件会被永久删除。"),
             Deletion::Save(f) => format!("删除存档 {f}？世界会被永久删除，建议先备份。"),
+            Deletion::Account(uuid) => {
+                let name = self.model.borrow().accounts.accounts.iter().find(|a| a.uuid() == uuid).map(|a| a.username().to_string());
+                let Some(name) = name else { return };
+                format!("从启动器中移除账户 {name}？微软账户之后可以重新登录。")
+            }
         };
         self.model.borrow_mut().pending = Some(pending);
         put(&self.shell.confirm_text, text);
@@ -121,12 +126,16 @@ impl Controller {
 
     pub(super) fn confirm(&self) {
         let Some(pending) = self.model.borrow_mut().pending.take() else { return };
+        if let Deletion::Account(uuid) = &pending {
+            return self.remove_account(uuid);
+        }
         let id = self.shell.picked.get();
         let game_dir = self.config().game_dir;
         let result = match &pending {
             Deletion::Mod(f) => mods::delete_mod(&game_dir, &id, f),
             Deletion::Shader(f) => shaders::delete_shaderpack(&game_dir, &id, f),
             Deletion::Save(f) => saves::delete_world_save(&game_dir, &id, f),
+            Deletion::Account(_) => return,
         };
         if let Err(e) = result {
             put(&self.shell.mods_warning, format!("删除失败：{e}"));
@@ -170,7 +179,7 @@ impl Controller {
         if !current.is_empty() && self.shell.picked.get() != current {
             self.pick_instance(&current);
         }
-        self.goto(1);
+        self.goto(2);
         self.shell.instance_tabs.select(3);
     }
 
@@ -362,7 +371,7 @@ impl Controller {
         if !picked.is_empty() {
             self.set_current(&picked);
         }
-        self.goto(2);
+        self.goto(3);
         self.shell.download_tabs.select(1);
         self.shell.mod_query.focus();
     }

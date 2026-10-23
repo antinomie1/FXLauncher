@@ -6,8 +6,10 @@
 use aegle::ui::scene::Affine;
 use aegle::ui::{Size, TextSystem, Theme, Ui, Visit};
 use aegle_render_software::{Renderer, Surface};
+use fxlauncher::account::{Account, AccountStore};
 use fxlauncher::config::{LauncherConfig, ThemePreference};
 use fxlauncher::net::download::ManifestVersion;
+use fxlauncher::net::profile::McProfile;
 use fxlauncher::task::{TaskManager, TaskStatus};
 use fxlauncher::ui::{Controller, Msg, Post, dark_theme, light_theme, mount};
 use std::cell::RefCell;
@@ -63,6 +65,67 @@ fn manifest() -> Vec<ManifestVersion> {
         mk("1.16.5", "release", "2021-01-15"),
         mk("1.12.2", "release", "2017-09-18"),
     ]
+}
+
+const MS_UUID: &str = "069a79f4-44e9-4726-a5be-fca90e38aaf5";
+
+fn fixture_accounts() -> AccountStore {
+    let mut store = AccountStore::default();
+    store.upsert(Account::new_offline("Steve"));
+    store.upsert(Account::Microsoft {
+        username: "Notch".into(),
+        uuid: MS_UUID.into(),
+        access_token: "token".into(),
+        refresh_token: "refresh".into(),
+        expires_at: u64::MAX,
+    });
+    store
+}
+
+fn fixture_profile() -> McProfile {
+    serde_json::from_str(r#"{
+        "id": "069a79f444e94726a5befca90e38aaf5", "name": "Notch",
+        "skins": [{"id": "s1", "state": "ACTIVE", "url": "http://textures.minecraft.net/texture/abc", "variant": "CLASSIC"}],
+        "capes": [
+            {"id": "c1", "state": "ACTIVE", "url": "", "alias": "Migrator"},
+            {"id": "c2", "state": "INACTIVE", "url": "", "alias": "Vanilla"}
+        ]
+    }"#).unwrap()
+}
+
+/// A 64×64 Steve-like skin texture as PNG: skin-toned face with hair and eyes, shirt, trousers.
+fn fixture_skin_png() -> Vec<u8> {
+    let mut px = vec![0u8; 64 * 64 * 4];
+    let mut fill = |x0: usize, y0: usize, w: usize, h: usize, rgb: [u8; 3]| {
+        for y in y0..y0 + h {
+            for x in x0..x0 + w {
+                px[(y * 64 + x) * 4..][..4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+            }
+        }
+    };
+    let (skin, hair, shirt, pants) = ([0xB4, 0x84, 0x6C], [0x3B, 0x2A, 0x1E], [0x00, 0xA8, 0xA8], [0x3A, 0x3A, 0x9C]);
+    fill(8, 8, 8, 8, skin); // face
+    fill(8, 8, 8, 2, hair);
+    fill(9, 12, 2, 1, [0xFF, 0xFF, 0xFF]); // eyes
+    fill(13, 12, 2, 1, [0xFF, 0xFF, 0xFF]);
+    fill(10, 12, 1, 1, [0x49, 0x3C, 0xA0]);
+    fill(13, 12, 1, 1, [0x49, 0x3C, 0xA0]);
+    fill(11, 14, 2, 1, [0x6A, 0x40, 0x30]); // mouth
+    fill(20, 20, 8, 12, shirt); // body
+    fill(44, 20, 4, 4, shirt); // right arm: sleeve, then hand
+    fill(44, 24, 4, 8, skin);
+    fill(36, 52, 4, 4, shirt); // left arm
+    fill(36, 56, 4, 8, skin);
+    fill(4, 20, 4, 12, pants); // legs
+    fill(20, 52, 4, 12, pants);
+    fill(4, 30, 4, 2, [0x55, 0x55, 0x55]); // shoes
+    fill(20, 62, 4, 2, [0x55, 0x55, 0x55]);
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, 64, 64);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header().unwrap().write_image_data(&px).unwrap();
+    out
 }
 
 fn fixture_tasks(manager: &TaskManager) {
@@ -130,12 +193,13 @@ fn build(theme: Theme, game_dir: &Path) -> (Ui, Rc<Controller>) {
     let config = LauncherConfig {
         game_dir: game_dir.to_path_buf(),
         selected_version: "Fabric 1.21.1".into(),
-        player_name: "Steve".into(),
         ..Default::default()
     };
     let post: Post = Arc::new(|_| {});
-    let controller = mount(&ui.root(), config, manager, post, false).unwrap();
+    let controller = mount(&ui.root(), config, fixture_accounts(), manager, post, false).unwrap();
     controller.handle(Msg::Manifest(Ok(manifest())));
+    controller.handle(Msg::Profile { uuid: MS_UUID.into(), result: Ok(fixture_profile()) });
+    controller.handle(Msg::SkinTexture { uuid: MS_UUID.into(), result: Ok(fixture_skin_png()) });
     controller.handle(Msg::Tick);
     (ui, controller)
 }
@@ -151,7 +215,7 @@ fn test_ui_mounts_and_renders() {
     if let Some(out) = &out {
         fs::create_dir_all(out).unwrap();
     }
-    let pages = ["play", "instances", "download", "tasks", "settings"];
+    let pages = ["play", "accounts", "instances", "download", "tasks", "settings"];
 
     let (ui, controller) = build(light_theme(), dir.path());
     let shell = controller.shell();
@@ -172,6 +236,15 @@ fn test_ui_mounts_and_renders() {
     // The play dropdown lists every instance and points at the current one.
     assert_eq!(shell.instance_titles.get(), ["1.20.1-Forge", "1.21.1", "Fabric 1.21.1"]);
     assert_eq!(shell.current_index.get(), 2);
+    // The signed-in account launches the game; its profile fills the 账户 page.
+    assert_eq!(shell.account_titles.get(), ["Steve", "Notch"]);
+    assert_eq!(shell.account_index.get(), 1);
+    assert_eq!(shell.account.get(), MS_UUID);
+    assert!(shell.account_microsoft.get());
+    assert!(!shell.cape_none.get() && !shell.skin_slim.get());
+    assert_eq!(shell.new_name.text(), "Notch");
+    assert!(shell.skin_shown.get(), "the skin texture is drawn as a front view");
+    assert_eq!(shell.skin_preview.image().map(|i| (i.width(), i.height())), Some((128, 256)));
 
     // Show the loader-version dropdown as it looks once Fabric versions arrive.
     shell.loader.set(1).unwrap();
@@ -185,6 +258,28 @@ fn test_ui_mounts_and_renders() {
         if let Some(out) = &out {
             render(&ui, light_theme(), &out.join(format!("{i}-{name}-light.png")));
         }
+    }
+
+    // Each settings category beside the navigation column.
+    controller.goto(5);
+    for (page, name) in ["game", "java", "download", "appearance"].iter().enumerate().skip(1) {
+        shell.settings_page.set(page as i64).unwrap();
+        ui.refresh().unwrap();
+        if let Some(out) = &out {
+            render(&ui, light_theme(), &out.join(format!("5-settings-{name}-light.png")));
+        }
+    }
+    shell.settings_page.set(0).unwrap();
+
+    // The sign-in dialog once the device code has arrived.
+    controller.goto(1);
+    shell.login_status.set("已在浏览器中打开微软登录页，代码已自动填入；如果没有打开，请手动访问下面的网址并输入代码。登录完成后这里会自动继续。".into()).unwrap();
+    shell.login_url.set("https://www.microsoft.com/link?otc=ABCD1234".into()).unwrap();
+    shell.login_code.set("ABCD1234".into()).unwrap();
+    shell.login_open.set(true).unwrap();
+    ui.refresh().unwrap();
+    if let Some(out) = &out {
+        render(&ui, light_theme(), &out.join("1-login-light.png"));
     }
     drop((ui, controller));
 

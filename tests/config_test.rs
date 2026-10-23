@@ -5,8 +5,6 @@ use tempfile::tempdir;
 #[test]
 fn test_default_config_values() {
     let cfg = LauncherConfig::default();
-    assert_eq!(cfg.player_name, "Steve");
-    assert!(cfg.offline_mode);
     assert_eq!(cfg.selected_version, "1.21.4");
     assert_eq!(cfg.java_path, "java");
     assert_eq!(cfg.min_memory_mb, 1024);
@@ -21,7 +19,6 @@ fn test_save_and_load_roundtrip() {
     let file_path = dir.path().join("config.json");
 
     let original = LauncherConfig {
-        player_name: "Alex".to_string(),
         selected_version: "1.20.1".to_string(),
         max_memory_mb: 8192,
         game_dir: PathBuf::from("/test/minecraft"),

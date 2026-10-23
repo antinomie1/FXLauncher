@@ -1,5 +1,6 @@
 //! Conversion of backend data into the markup records declared in `parts.aegle`.
 
+use crate::game::account::Account;
 use crate::game::loader::detect_instance_loader;
 use crate::game::mods::ModEntry;
 use crate::game::saves::WorldSaveEntry;
@@ -7,6 +8,7 @@ use crate::game::shaders::ShaderPackEntry;
 use crate::game::version::VersionError;
 use crate::net::download::ManifestVersion;
 use crate::net::mods::{ModLoader, ModSearchResult};
+use crate::net::profile::Cape;
 use crate::net::task::{TaskSnapshot, TaskStatus};
 use aegle::loader::Data;
 use std::path::Path;
@@ -200,4 +202,73 @@ pub fn hit_records(hits: &[ModSearchResult]) -> Data {
 
 pub fn java_records(javas: &[(String, String)]) -> Data {
     records(javas.iter().map(|(path, detail)| vec![s(path), s(detail)]))
+}
+
+pub fn account_records(accounts: &[Account]) -> Data {
+    records(accounts.iter().map(|a| {
+        let kind = if a.is_microsoft() { "微软账户" } else { "离线账户" };
+        vec![s(a.uuid()), s(a.username()), s(kind)]
+    }))
+}
+
+pub fn cape_records(capes: &[Cape]) -> Data {
+    records(capes.iter().map(|c| {
+        let name = if c.alias.is_empty() { c.id.clone() } else { c.alias.clone() };
+        vec![s(&c.id), s(name), Data::Bool(c.state == "ACTIVE")]
+    }))
+}
+
+/// Front view of a Minecraft skin texture (64×64, or legacy 64×32 whose left limbs mirror the
+/// right ones): a 16×32 figure with the outer layer drawn over the base, enlarged `scale` times
+/// with hard pixel edges. Returns width, height and RGBA rows, or `None` for other sizes.
+pub fn skin_front(rgba: &[u8], width: u32, height: u32, slim: bool, scale: u32) -> Option<(u32, u32, Vec<u8>)> {
+    if width != 64 || !(height == 64 || height == 32) || rgba.len() != (width * height * 4) as usize {
+        return None;
+    }
+    let modern = height == 64;
+    let arm = if slim { 3 } else { 4 };
+    let mut figure = vec![0u8; 16 * 32 * 4];
+    // (source x, y, width, height, destination x, y, mirror) — base layer first, then overlays.
+    let mut parts = vec![
+        (8, 8, 8, 8, 4, 0, false),           // head
+        (20, 20, 8, 12, 4, 8, false),        // body
+        (44, 20, arm, 12, 4 - arm, 8, false), // right arm (viewer's left)
+        (4, 20, 4, 12, 4, 20, false),        // right leg
+    ];
+    if modern {
+        parts.extend([(36, 52, arm, 12, 12, 8, false), (20, 52, 4, 12, 8, 20, false)]);
+        parts.extend([
+            (40, 8, 8, 8, 4, 0, false),
+            (20, 36, 8, 12, 4, 8, false),
+            (44, 36, arm, 12, 4 - arm, 8, false),
+            (52, 52, arm, 12, 12, 8, false),
+            (4, 36, 4, 12, 4, 20, false),
+            (4, 52, 4, 12, 8, 20, false),
+        ]);
+    } else {
+        parts.extend([(44, 20, arm, 12, 12, 8, true), (4, 20, 4, 12, 8, 20, true), (40, 8, 8, 8, 4, 0, false)]);
+    }
+    for (sx, sy, w, h, dx, dy, mirror) in parts {
+        for y in 0..h {
+            for x in 0..w {
+                let from = (((sy + y) * width + sx + if mirror { w - 1 - x } else { x }) * 4) as usize;
+                let to = (((dy + y) * 16 + dx + x) * 4) as usize;
+                let (src, alpha) = (&rgba[from..from + 4], rgba[from + 3] as u32);
+                for c in 0..3 {
+                    figure[to + c] = ((src[c] as u32 * alpha + figure[to + c] as u32 * (255 - alpha)) / 255) as u8;
+                }
+                figure[to + 3] = figure[to + 3].max(src[3]);
+            }
+        }
+    }
+    let (w, h) = (16 * scale, 32 * scale);
+    let mut out = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let from = (((y / scale) * 16 + x / scale) * 4) as usize;
+            let to = ((y * w + x) * 4) as usize;
+            out[to..to + 4].copy_from_slice(&figure[from..from + 4]);
+        }
+    }
+    Some((w, h, out))
 }

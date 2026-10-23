@@ -10,7 +10,7 @@ pub mod saves;
 pub mod shaders;
 pub mod version;
 
-pub use account::{Account, offline_uuid};
+pub use account::{Account, AccountStore, offline_uuid};
 pub use config::{ConfigError, LauncherConfig, ThemePreference};
 pub use launch::{LaunchContext, LaunchError, build_game_args, build_jvm_args, build_launch_command, build_token_map, join_classpaths, prepare_and_launch, prepare_launch_command, replace_tokens, required_java_for, spawn_game};
 pub use loader::{InstanceLoaderInfo, detect_instance_loader, detect_loader_from_info};

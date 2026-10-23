@@ -9,6 +9,8 @@ record ShaderRow { name: string; detail: string; active: bool }
 record SaveRow { folder: string; name: string; detail: string }
 record ModHit { id: string; title: string; detail: string; description: string }
 record JavaRow { path: string; detail: string }
+record AccountRow { id: string; name: string; detail: string }
+record CapeRow { id: string; name: string; active: bool }
 
 // A titled group of controls (settings, install options). Slot content may carry ids.
 component Section(title: string, hint: string = "") {

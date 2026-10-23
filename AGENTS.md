@@ -46,7 +46,7 @@ fxlauncher/
 │   │   ├── paths.rs     # 跨平台路径计算与版本子目录辅助函数
 │   │   └── java.rs      # Java 探测、版本提取与版本兼容匹配
 │   ├── game/            # 游戏核心模型与运行
-│   │   ├── account.rs   # 离线与在线账户模型、UUID 派生
+│   │   ├── account.rs   # 离线与微软账户模型、UUID 派生、账户列表持久化
 │   │   ├── config.rs    # 启动器配置存储与持久化 (JSON)
 │   │   ├── version.rs   # version.json 解析、inheritsFrom 合并、规则与类路径装配
 │   │   ├── natives.rs   # 本地库 (LWJGL 等) 解压到 versions/<id>/natives
@@ -57,6 +57,8 @@ fxlauncher/
 │   │   └── saves.rs     # 地图存档管理 (列表/大小/备份/重命名/删除)
 │   ├── net/             # 网络、任务管理与内容下载
 │   │   ├── client.rs    # HTTP 请求与参数编码轻量封装
+│   │   ├── auth.rs      # 微软正版验证 (设备码 OAuth → Xbox → XSTS → Minecraft)
+│   │   ├── profile.rs   # Minecraft 档案：玩家名、皮肤、披风
 │   │   ├── task.rs      # 全局非阻塞任务管理与 SHA-1 校验
 │   │   ├── batch.rs     # 多线程批量下载 (镜像回退、已存在文件跳过)
 │   │   ├── download.rs  # 版本清单、镜像地址映射 (官方 + BMCLAPI)
@@ -72,13 +74,14 @@ fxlauncher/
 │       ├── main.aegle   # 界面结构与 state (启动/实例/下载/任务/设置)
 │       ├── parts.aegle  # record 与可复用组件 (任务卡片、模组行等)
 │       ├── mod.rs       # 窗口、主题与视图挂载
+│       ├── accounts.rs  # 账户页：微软登录与档案管理
 │       ├── actions.rs   # host.* 动作注册
 │       ├── controller.rs# 启动、任务、设置与后台消息
 │       ├── content.rs   # 实例内容管理与下载页
 │       └── model.rs     # 后端数据 → 标记 record 的转换
 └── tests/               # 独立测试集合 (与 src 完全分离)
     ├── paths_test.rs        # 路径解析测试
-    ├── account_test.rs      # 账户与 UUID 测试
+    ├── account_test.rs      # 账户、UUID、账户列表、档案解析与皮肤校验测试
     ├── config_test.rs       # 配置读写测试
     ├── java_test.rs         # Java 输出解析与兼容测试
     ├── version_test.rs      # 版本 JSON 与规则测试
@@ -101,7 +104,7 @@ fxlauncher/
 # 代码检查
 cargo check
 
-# 运行全套测试 (54 个分离集成测试；Linux 构建界面需要 libxkbcommon 与 fontconfig 开发文件)
+# 运行全套测试 (58 个分离集成测试；Linux 构建界面需要 libxkbcommon 与 fontconfig 开发文件)
 cargo test
 
 # 仅后端 (不编译界面)

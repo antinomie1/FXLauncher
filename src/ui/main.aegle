@@ -18,6 +18,26 @@ Column {
     state crash_body: string = ""
     state task_badge: string = ""
 
+    // ---- 账户 ----
+    state accounts: list<AccountRow> = []
+    state account_titles: list<string> = ["无账户"]
+    state account_index: int = 0
+    state account: string = ""
+    state account_title: string = ""
+    state account_detail: string = ""
+    state account_microsoft: bool = false
+    state account_status: string = ""
+    state account_busy: bool = false
+    state skin_text: string = ""
+    state skin_slim: bool = false
+    state skin_shown: bool = false
+    state capes: list<CapeRow> = []
+    state cape_none: bool = true
+    state login_open: bool = false
+    state login_status: string = ""
+    state login_code: string = ""
+    state login_url: string = ""
+
     // ---- 实例 ----
     state picked: string = ""
     state picked_title: string = ""
@@ -57,6 +77,7 @@ Column {
     state java_current: string = ""
     state java_status: string = ""
     state saved_hint: string = ""
+    state settings_page: int = 0
 
     // ---- 确认对话框 ----
     state confirm_open: bool = false
@@ -69,7 +90,7 @@ Column {
         align: center
         Text { text: "FXLauncher"; font_size: 20dp; grow: 1 }
         Text { text: saved_hint; foreground: token("theme.muted"); visible: saved_hint != "" }
-        Button { text: task_badge; visible: task_badge != ""; tooltip: "查看任务"; on clicked { host.goto(3) } }
+        Button { text: task_badge; visible: task_badge != ""; tooltip: "查看任务"; on clicked { host.goto(4) } }
     }
 
     Tabs {
@@ -98,7 +119,7 @@ Column {
                     Row {
                         visible: current == ""
                         margin: [8dp, 0dp, 0dp, 0dp]
-                        Button { text: "安装游戏"; on clicked { host.goto(2) } }
+                        Button { text: "安装游戏"; on clicked { host.goto(3) } }
                     }
                 }
 
@@ -126,8 +147,19 @@ Column {
                     align: end
                     Column {
                         gap: 4dp
-                        Text { text: "玩家名"; font_size: 12dp; foreground: token("theme.muted") }
-                        TextField { id: player; text: ""; width: 180dp; label: "玩家名"; on changed { host.set_player(self.text) } }
+                        Text { text: "账户"; font_size: 12dp; foreground: token("theme.muted") }
+                        Row {
+                            gap: 4dp
+                            Dropdown {
+                                items: account_titles
+                                selected: account_index
+                                width: 200dp
+                                label: "选择账户"
+                                enabled: len(accounts) > 0
+                                on changed { host.pick_account_index(self.selected) }
+                            }
+                            Button { text: "管理"; tooltip: "添加、登录或切换账户"; on clicked { host.goto(1) } }
+                        }
                     }
                     Column {
                         gap: 4dp
@@ -152,8 +184,119 @@ Column {
                             width: 200dp
                             height: 48dp
                             font_size: 16dp
-                            enabled: !busy && current != ""
+                            enabled: !busy && current != "" && account != ""
                             on clicked { host.launch() }
+                        }
+                    }
+                }
+            }
+        }
+
+        Tab {
+            title: "账户"
+            Row {
+                grow: 1
+                Column {
+                    width: 280dp
+                    padding: 16dp
+                    gap: 8dp
+                    background: token("theme.surface")
+                    Text { text: "账户"; font_size: 16dp }
+                    Text { text: "还没有账户"; foreground: token("theme.muted"); visible: len(accounts) == 0 }
+                    ScrollView {
+                        border_width: 0dp
+                        grow: 1
+                        TreeView {
+                            for a in accounts key a.id {
+                                TreeNode {
+                                    text: a.name
+                                    tooltip: a.detail
+                                    selected: a.id == account
+                                    on selected { host.pick_account(a.id) }
+                                }
+                            }
+                        }
+                    }
+                    Button { id: ms_login; text: "微软账户登录"; on clicked { host.start_login() } }
+                    Text { text: "离线玩家名"; font_size: 12dp; foreground: token("theme.muted"); margin: [8dp, 0dp, 0dp, 0dp] }
+                    Row {
+                        gap: 4dp
+                        TextField { id: offline_name; text: ""; grow: 1; label: "离线玩家名"; on submitted { host.add_offline(self.text) } }
+                        Button { text: "添加"; on clicked { host.add_offline_button() } }
+                    }
+                }
+                ScrollView {
+                    border_width: 0dp
+                    grow: 1
+                    Column {
+                        padding: 24dp
+                        gap: 20dp
+                        Text { text: "登录微软账户以进入正版服务器，或添加一个离线账户。"; foreground: token("theme.muted"); visible: account == "" }
+                        Row {
+                            visible: account != ""
+                            gap: 12dp
+                            align: center
+                            Column {
+                                grow: 1
+                                gap: 4dp
+                                Text { text: account_title; font_size: 24dp }
+                                Text { text: account_detail; foreground: token("theme.muted") }
+                            }
+                            Button { text: "重新验证"; visible: account_microsoft; enabled: !account_busy; on clicked { host.refresh_account() } }
+                            Button { text: "删除"; on clicked { host.delete_account() } }
+                        }
+                        Text { text: account_status; visible: account_status != "" }
+                        Text {
+                            text: "离线账户不经过正版验证，只能进入单人世界和未开启正版验证的服务器；皮肤只在本地显示。"
+                            wrap: true
+                            foreground: token("theme.muted")
+                            visible: account != "" && !account_microsoft
+                        }
+                        Column {
+                            visible: account_microsoft
+                            gap: 28dp
+                            Section {
+                                title: "玩家名"
+                                hint: "每 30 天可以修改一次，修改后旧名字会保留 37 天才释放。"
+                                Row {
+                                    gap: 8dp
+                                    TextField { id: new_name; text: ""; max_width: 280dp; grow: 1; label: "新玩家名"; on submitted { host.change_name() } }
+                                    Button { text: "修改"; enabled: !account_busy; on clicked { host.change_name() } }
+                                }
+                            }
+                            Row {
+                                gap: 24dp
+                                // Front view of the skin, drawn by Rust from the texture.
+                                Image { id: skin_preview; width: 64dp; height: 128dp; fit: contain; visible: skin_shown }
+                                Column {
+                                    grow: 1
+                                    Section {
+                                        title: "皮肤"
+                                        hint: skin_text
+                                        Row {
+                                            gap: 20dp
+                                            RadioButton { text: "经典（Steve）"; checked: !skin_slim; enabled: !account_busy; on changed { host.set_skin_model(false) } }
+                                            RadioButton { text: "纤细（Alex）"; checked: skin_slim; enabled: !account_busy; on changed { host.set_skin_model(true) } }
+                                        }
+                                        FilePicker { id: skin_path; mode: open; title: "选择皮肤"; filters: ["PNG 图片|*.png"]; button_text: "浏览…"; label: "皮肤 PNG 文件（64×64）" }
+                                        Row {
+                                            gap: 8dp
+                                            Button { text: "上传"; enabled: !account_busy; on clicked { host.upload_skin() } }
+                                            Button { text: "恢复默认"; enabled: !account_busy; on clicked { host.reset_skin() } }
+                                        }
+                                    }
+                                }
+                            }
+                            Section {
+                                title: "披风"
+                                hint: "只能使用账户已拥有的披风。"
+                                Column {
+                                    gap: 8dp
+                                    enabled: !account_busy
+                                    RadioButton { text: "不显示披风"; checked: cape_none; on changed { host.set_cape("") } }
+                                    for c in capes key c.id { RadioButton { text: c.name; checked: c.active; on changed { host.set_cape(c.id) } } }
+                                }
+                            }
                         }
                     }
                 }
@@ -185,7 +328,7 @@ Column {
                             }
                         }
                     }
-                    Button { text: "安装新实例"; on clicked { host.goto(2) } }
+                    Button { text: "安装新实例"; on clicked { host.goto(3) } }
                 }
                 Column {
                     grow: 1
@@ -407,75 +550,131 @@ Column {
 
         Tab {
             title: "设置"
-            ScrollView {
-                border_width: 0dp
+            Row {
                 grow: 1
+                // Category navigation; only the chosen category is shown on the right.
                 Column {
-                    padding: [24dp, 12dp]
-                    gap: 28dp
-                    max_width: 760dp
-
-                    Section {
-                        title: "游戏目录"
-                        hint: "版本、依赖库与资源文件的存放位置。修改后按回车或点击应用。"
-                        Row {
-                            gap: 8dp
-                            TextField { id: game_dir; text: ""; grow: 1; label: "游戏目录"; on submitted { host.apply_game_dir() } }
-                            Button { text: "应用"; on clicked { host.apply_game_dir() } }
-                        }
-                        Switch { text: "版本隔离（每个实例使用独立的游戏文件夹）"; checked: isolation; on changed { host.set_isolation(self.checked) } }
+                    width: 200dp
+                    padding: 16dp
+                    gap: 8dp
+                    background: token("theme.surface")
+                    TreeView {
+                        grow: 1
+                        TreeNode { text: "游戏"; selected: settings_page == 0; on selected { settings_page = 0 } }
+                        TreeNode { text: "Java 与内存"; selected: settings_page == 1; on selected { settings_page = 1 } }
+                        TreeNode { text: "下载"; selected: settings_page == 2; on selected { settings_page = 2 } }
+                        TreeNode { text: "外观"; selected: settings_page == 3; on selected { settings_page = 3 } }
                     }
-
-                    Section {
-                        title: "Java"
-                        hint: "启动时会自动选择满足版本要求的 Java；也可以在这里指定。"
-                        Row {
-                            gap: 8dp
-                            TextField { id: java_path; text: ""; grow: 1; label: "Java 路径"; on changed { host.apply_java() } }
-                            Button { text: "自动检测"; on clicked { host.detect_java() } }
-                        }
-                        Text { text: java_status; visible: java_status != ""; foreground: token("theme.muted") }
-                        Column { for j in javas key j.path { JavaChoice { j: j; selected: java_current } } }
-                    }
-
-                    Column {
-                        gap: 8dp
-                        Row {
-                            Text { text: "最大内存"; font_size: 16dp; grow: 1 }
-                            Text { text: str(int(memory)) + " MB" }
-                        }
-                        Slider { id: memory_slider; min: 1024; max: 32768; value: 4096; step: 512; label: "最大内存"; on changed { memory = self.value; host.set_memory(self.value) } }
-                        Text { text: "JVM 参数"; foreground: token("theme.muted") }
-                        TextField { id: jvm_args; text: ""; label: "额外 JVM 参数，空格分隔"; on changed { host.apply_jvm_args() } }
-                    }
-
-                    Section {
-                        title: "游戏窗口"
-                        Row {
-                            gap: 12dp
-                            align: center
-                            NumberField { id: window_width; min: 320; max: 7680; value: 854; step: 1; decimals: 0; width: 140dp; label: "宽度"; on changed { host.set_window_width(self.value) } }
-                            Text { text: "×" }
-                            NumberField { id: window_height; min: 240; max: 4320; value: 480; step: 1; decimals: 0; width: 140dp; label: "高度"; on changed { host.set_window_height(self.value) } }
-                        }
-                    }
-
-                    Section {
-                        title: "下载源"
-                        hint: "首选源失败时会自动改用另一个。"
-                        RadioButton { text: "BMCLAPI 镜像（中国大陆推荐）"; checked: source == 0; on changed { host.set_source(0) } }
-                        RadioButton { text: "官方源（Mojang）"; checked: source == 1; on changed { host.set_source(1) } }
-                    }
-
-                    Section {
-                        title: "外观"
-                        RadioButton { text: "跟随系统"; checked: theme_mode == 0; on changed { host.set_theme(0) } }
-                        RadioButton { text: "浅色"; checked: theme_mode == 1; on changed { host.set_theme(1) } }
-                        RadioButton { text: "深色"; checked: theme_mode == 2; on changed { host.set_theme(2) } }
-                    }
-
-                    Text { text: "设置会自动保存到 .minecraft/fxlauncher.json。"; font_size: 12dp; foreground: token("theme.muted") }
+                    Text { text: "设置会自动保存到 .minecraft/fxlauncher.json。"; font_size: 12dp; foreground: token("theme.muted"); wrap: true }
                 }
+                ScrollView {
+                    border_width: 0dp
+                    grow: 1
+                    Column {
+                        padding: 24dp
+                        gap: 28dp
+                        max_width: 760dp
+
+                        Column {
+                            visible: settings_page == 0
+                            gap: 28dp
+                            Section {
+                                title: "游戏目录"
+                                hint: "版本、依赖库与资源文件的存放位置。修改后点击应用。"
+                                Row {
+                                    gap: 8dp
+                                    FilePicker { id: game_dir; mode: folder; title: "选择游戏目录"; button_text: "浏览…"; grow: 1; label: "游戏目录" }
+                                    Button { text: "应用"; on clicked { host.apply_game_dir() } }
+                                }
+                                Switch { text: "版本隔离（每个实例使用独立的游戏文件夹）"; checked: isolation; on changed { host.set_isolation(self.checked) } }
+                            }
+                            Section {
+                                title: "游戏窗口"
+                                Row {
+                                    gap: 12dp
+                                    align: center
+                                    NumberField { id: window_width; min: 320; max: 7680; value: 854; step: 1; decimals: 0; width: 140dp; label: "宽度"; on changed { host.set_window_width(self.value) } }
+                                    Text { text: "×" }
+                                    NumberField { id: window_height; min: 240; max: 4320; value: 480; step: 1; decimals: 0; width: 140dp; label: "高度"; on changed { host.set_window_height(self.value) } }
+                                }
+                            }
+                        }
+
+                        Column {
+                            visible: settings_page == 1
+                            gap: 28dp
+                            Section {
+                                title: "Java"
+                                hint: "启动时会自动选择满足版本要求的 Java；也可以在这里指定。"
+                                Row {
+                                    gap: 8dp
+                                    FilePicker { id: java_path; mode: open; title: "选择 Java"; button_text: "浏览…"; grow: 1; label: "Java 路径"; on changed { host.apply_java() } }
+                                    Button { text: "自动检测"; on clicked { host.detect_java() } }
+                                }
+                                Text { text: java_status; visible: java_status != ""; foreground: token("theme.muted") }
+                                Column { for j in javas key j.path { JavaChoice { j: j; selected: java_current } } }
+                            }
+                            Column {
+                                gap: 8dp
+                                Row {
+                                    Text { text: "最大内存"; font_size: 16dp; grow: 1 }
+                                    Text { text: str(int(memory)) + " MB" }
+                                }
+                                Slider { id: memory_slider; min: 1024; max: 32768; value: 4096; step: 512; label: "最大内存"; on changed { memory = self.value; host.set_memory(self.value) } }
+                            }
+                            Section {
+                                title: "JVM 参数"
+                                hint: "额外的 JVM 参数，用空格分隔，例如 -XX:+UseZGC。"
+                                TextField { id: jvm_args; text: ""; label: "额外 JVM 参数，空格分隔"; on changed { host.apply_jvm_args() } }
+                            }
+                        }
+
+                        Column {
+                            visible: settings_page == 2
+                            Section {
+                                title: "下载源"
+                                hint: "首选源失败时会自动改用另一个。"
+                                RadioButton { text: "BMCLAPI 镜像（中国大陆推荐）"; checked: source == 0; on changed { host.set_source(0) } }
+                                RadioButton { text: "官方源（Mojang）"; checked: source == 1; on changed { host.set_source(1) } }
+                            }
+                        }
+
+                        Column {
+                            visible: settings_page == 3
+                            Section {
+                                title: "外观"
+                                RadioButton { text: "跟随系统"; checked: theme_mode == 0; on changed { host.set_theme(0) } }
+                                RadioButton { text: "浅色"; checked: theme_mode == 1; on changed { host.set_theme(1) } }
+                                RadioButton { text: "深色"; checked: theme_mode == 2; on changed { host.set_theme(2) } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        title: "微软账户登录"
+        open: login_open
+        on closed { login_open = false; host.cancel_login() }
+        Column {
+            gap: 12dp
+            width: 420dp
+            Text { text: login_status; wrap: true }
+            Column {
+                visible: login_code != ""
+                gap: 8dp
+                Text { text: "登录网址"; font_size: 12dp; foreground: token("theme.muted") }
+                TextField { text: login_url; read_only: true; label: "登录网址" }
+                Text { text: "登录代码"; font_size: 12dp; foreground: token("theme.muted") }
+                Text { text: login_code; font_size: 28dp }
+            }
+            Row {
+                gap: 8dp
+                justify: end
+                Button { text: "打开登录网页"; visible: login_code != ""; on clicked { host.open_login_page() } }
+                Button { text: "取消"; on clicked { login_open = false; host.cancel_login() } }
             }
         }
     }

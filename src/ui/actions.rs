@@ -47,16 +47,26 @@ pub(super) fn register(cell: &Rc<OnceCell<Rc<Controller>>>) {
     use Type::{Bool, Float, Int, String as Str};
 
     // 启动 / navigation
-    on("goto", &[Int], |c, a| c.goto(int(a).clamp(0, 4) as usize));
+    on("goto", &[Int], |c, a| c.goto(int(a).clamp(0, 5) as usize));
     on("launch", &[], |c, _| c.launch());
     on("pick_current", &[Int], |c, a| c.pick_current(int(a).max(0) as usize));
-    on("set_player", &[Str], |c, a| {
-        let name = text(a).trim().to_string();
-        if crate::game::account::Account::validate_username(&name) {
-            c.update_config(|cfg| cfg.player_name = name);
-        }
-    });
+    on("pick_account_index", &[Int], |c, a| c.pick_account_index(int(a).max(0) as usize));
     on("show_diagnosis", &[], |c, _| c.show_diagnosis());
+
+    // 账户
+    on("pick_account", &[Str], |c, a| c.pick_account(&text(a)));
+    on("add_offline", &[Str], |c, a| c.add_offline(&text(a)));
+    on("add_offline_button", &[], |c, _| c.add_offline(&c.shell.offline_name.text()));
+    on("delete_account", &[], |c, _| c.request(Deletion::Account(c.shell.account.get())));
+    on("start_login", &[], |c, _| c.start_login());
+    on("cancel_login", &[], |c, _| c.cancel_login());
+    on("open_login_page", &[], |c, _| c.open_login_page());
+    on("refresh_account", &[], |c, _| c.refresh_account());
+    on("change_name", &[], |c, _| c.change_name());
+    on("set_skin_model", &[Bool], |c, a| c.set_skin_model(flag(a)));
+    on("upload_skin", &[], |c, _| c.upload_skin());
+    on("reset_skin", &[], |c, _| c.reset_skin());
+    on("set_cape", &[Str], |c, a| c.set_cape(&text(a)));
 
     // 实例
     on("pick_instance", &[Str], |c, a| c.pick_instance(&text(a)));
@@ -102,7 +112,7 @@ pub(super) fn register(cell: &Rc<OnceCell<Rc<Controller>>>) {
 
     // 设置
     on("apply_game_dir", &[], |c, _| {
-        let dir = PathBuf::from(c.shell.game_dir.text().trim());
+        let dir = PathBuf::from(c.shell.game_dir.path().trim());
         if dir.as_os_str().is_empty() {
             return;
         }
@@ -114,14 +124,14 @@ pub(super) fn register(cell: &Rc<OnceCell<Rc<Controller>>>) {
     });
     on("set_isolation", &[Bool], |c, a| c.update_config(|cfg| cfg.version_isolation = flag(a)));
     on("apply_java", &[], |c, _| {
-        let path = c.shell.java_path.text().trim().to_string();
+        let path = c.shell.java_path.path().trim().to_string();
         put(&c.shell.java_current, path.clone());
         c.update_config(|cfg| cfg.java_path = path);
     });
     on("detect_java", &[], |c, _| c.detect_java());
     on("pick_java", &[Str], |c, a| {
         let path = text(a);
-        c.shell.java_path.set_text(&path);
+        c.shell.java_path.set_path(&path);
         put(&c.shell.java_current, path.clone());
         c.update_config(|cfg| cfg.java_path = path);
     });
