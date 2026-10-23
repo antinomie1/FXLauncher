@@ -54,6 +54,7 @@ fn test_build_launch_command_modern() {
         window_height: 480,
         version_isolation: false,
         download_source: fxlauncher::downloader::DownloadSource::Official,
+        ..Default::default()
     };
     let account = Account::new_offline("Steve");
 
@@ -120,7 +121,7 @@ fn test_build_launch_command_legacy() {
             "--version",
             "1.12.2",
             "--gameDir",
-            &expected_dir.to_string_lossy().to_string()
+            expected_dir.to_string_lossy().as_ref()
         ]
     );
 

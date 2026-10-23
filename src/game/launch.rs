@@ -1,11 +1,13 @@
 //! Minecraft launch command assembly and process management.
 
-use crate::env::paths::{assets_dir, classpath_separator, natives_dir, os_name, version_dir};
+use crate::env::paths::{assets_dir, classpath_separator, libraries_dir, natives_dir, os_name, version_dir};
 use crate::game::account::Account;
 use crate::game::config::LauncherConfig;
+use crate::game::natives::extract_natives;
 use crate::game::version::{
-    ArgumentItem, ArgumentValue, VersionInfo, collect_classpaths, evaluate_rules, load_version_info,
+    ArgumentItem, ArgumentValue, VersionInfo, collect_classpaths, evaluate_rules_with, load_version_info,
 };
+use crate::net::install::legacy_assets_dir;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::{Child, Command};
@@ -26,6 +28,9 @@ pub struct LaunchContext<'a> {
     pub version: &'a VersionInfo,
     pub account: &'a Account,
 }
+
+/// Launcher features reported to argument rules; everything else (demo, quick play) stays off.
+pub const LAUNCH_FEATURES: &[&str] = &["has_custom_resolution"];
 
 /// Token replacer for Minecraft argument templates (e.g. `${auth_player_name}`).
 pub fn replace_tokens(template: &str, tokens: &HashMap<&str, String>) -> String {
@@ -56,16 +61,25 @@ pub fn build_token_map(ctx: &LaunchContext<'_>, classpath_str: &str) -> HashMap<
         .map(|a| a.id.clone())
         .or_else(|| ctx.version.assets.clone())
         .unwrap_or_else(|| ctx.version.id.clone());
+    let game_assets = if matches!(asset_index.as_str(), "legacy" | "pre-1.6") {
+        legacy_assets_dir(&ctx.config.game_dir).to_string_lossy().to_string()
+    } else {
+        assets_dir_str.clone()
+    };
 
     let mut map = HashMap::new();
     map.insert("auth_player_name", ctx.account.username().to_string());
     map.insert("version_name", ctx.version.id.clone());
     map.insert("game_directory", game_dir_str);
     map.insert("assets_root", assets_dir_str.clone());
-    map.insert("game_assets", assets_dir_str);
+    map.insert("game_assets", game_assets);
     map.insert("assets_index_name", asset_index);
     map.insert("auth_uuid", ctx.account.uuid().to_string());
     map.insert("auth_access_token", ctx.account.access_token().to_string());
+    map.insert("auth_session", ctx.account.access_token().to_string());
+    map.insert("auth_xuid", "0".to_string());
+    map.insert("clientid", String::new());
+    map.insert("user_properties", "{}".to_string());
     map.insert("user_type", ctx.account.user_type().to_string());
     map.insert("version_type", ctx.version.version_type.clone());
     map.insert("resolution_width", ctx.config.window_width.to_string());
@@ -75,6 +89,10 @@ pub fn build_token_map(ctx: &LaunchContext<'_>, classpath_str: &str) -> HashMap<
     map.insert("launcher_version", env!("CARGO_PKG_VERSION").to_string());
     map.insert("classpath", classpath_str.to_string());
     map.insert("classpath_separator", classpath_separator().to_string());
+    map.insert(
+        "library_directory",
+        libraries_dir(&ctx.config.game_dir).to_string_lossy().to_string(),
+    );
     map
 }
 
@@ -113,7 +131,7 @@ pub fn build_jvm_args(ctx: &LaunchContext<'_>, tokens: &HashMap<&str, String>, c
                     args.push(replaced);
                 }
                 ArgumentItem::Conditional { rules, value } => {
-                    if evaluate_rules(rules, current_os) {
+                    if evaluate_rules_with(rules, current_os, LAUNCH_FEATURES) {
                         match value {
                             ArgumentValue::Single(s) => args.push(replace_tokens(s, tokens)),
                             ArgumentValue::Multiple(list) => {
@@ -148,7 +166,7 @@ pub fn build_game_args(ctx: &LaunchContext<'_>, tokens: &HashMap<&str, String>) 
             match item {
                 ArgumentItem::Simple(s) => args.push(replace_tokens(s, tokens)),
                 ArgumentItem::Conditional { rules, value } => {
-                    if evaluate_rules(rules, current_os) {
+                    if evaluate_rules_with(rules, current_os, LAUNCH_FEATURES) {
                         match value {
                             ArgumentValue::Single(s) => args.push(replace_tokens(s, tokens)),
                             ArgumentValue::Multiple(list) => {
@@ -206,6 +224,21 @@ pub fn spawn_game(ctx: &LaunchContext<'_>) -> Result<Child, LaunchError> {
 
 /// Prepares launch context and spawns Minecraft, returning either the Child process or an error message.
 pub fn prepare_and_launch(config: &LauncherConfig) -> Result<Child, String> {
+    prepare_launch_command(config)?
+        .spawn()
+        .map_err(|e| format!("启动游戏子进程失败: {e}"))
+}
+
+/// Java major version a version needs: its `javaVersion` metadata, else derived from the id.
+pub fn required_java_for(info: &VersionInfo) -> u32 {
+    info.java_version
+        .as_ref()
+        .map(|j| j.major_version)
+        .unwrap_or_else(|| crate::env::java::required_java_major(info.client_jar_id()))
+}
+
+/// Validates the configuration, extracts natives and builds the launch command without spawning it.
+pub fn prepare_launch_command(config: &LauncherConfig) -> Result<Command, String> {
     if !Account::validate_username(&config.player_name) {
         return Err("玩家用户名不合法：必须为 1-16 位字母、数字或下划线。".to_string());
     }
@@ -216,6 +249,10 @@ pub fn prepare_and_launch(config: &LauncherConfig) -> Result<Child, String> {
     let version_info = load_version_info(&config.game_dir, &config.selected_version)
         .map_err(|e| format!("无法读取版本 '{}' 的 JSON 元数据: {e}", config.selected_version))?;
 
+    // Natives may be missing when files were copied from another launcher; extraction is idempotent.
+    extract_natives(&config.game_dir, &version_info)
+        .map_err(|e| format!("解压本地库失败: {e}"))?;
+
     let account = Account::from_credentials(&config.player_name, config.offline_mode);
 
     let ctx = LaunchContext {
@@ -224,5 +261,5 @@ pub fn prepare_and_launch(config: &LauncherConfig) -> Result<Child, String> {
         account: &account,
     };
 
-    spawn_game(&ctx).map_err(|e| format!("启动游戏子进程失败: {e}"))
+    build_launch_command(&ctx).map_err(|e| format!("无法组装启动命令: {e}"))
 }

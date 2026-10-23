@@ -1,13 +1,32 @@
 //! Minecraft game downloader supporting Official Mojang and BMCLAPI mirrors.
 
-use crate::env::paths::{ensure_dir, version_dir, version_jar_path, version_json_path};
-use crate::net::client::http_get_json;
-use crate::net::task::{TaskHandle, TaskManager, spawn_download_task};
+use crate::env::paths::{ensure_dir, version_dir, version_json_path};
+use crate::net::client::{http_get_json, http_get_json_any};
+use crate::net::task::{TaskHandle, TaskManager};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
+
+const BMCLAPI: &str = "https://bmclapi2.bangbang93.com";
+
+/// Official host prefix → BMCLAPI mirror prefix.
+const MIRROR_MAP: &[(&str, &str)] = &[
+    ("https://piston-meta.mojang.com", BMCLAPI),
+    ("https://launchermeta.mojang.com", BMCLAPI),
+    ("https://piston-data.mojang.com", BMCLAPI),
+    ("https://launcher.mojang.com", BMCLAPI),
+    ("https://libraries.minecraft.net/", "https://bmclapi2.bangbang93.com/maven/"),
+    ("https://resources.download.minecraft.net/", "https://bmclapi2.bangbang93.com/assets/"),
+    ("https://maven.minecraftforge.net/", "https://bmclapi2.bangbang93.com/maven/"),
+    ("https://files.minecraftforge.net/maven/", "https://bmclapi2.bangbang93.com/maven/"),
+    ("https://maven.neoforged.net/releases/", "https://bmclapi2.bangbang93.com/maven/"),
+    ("https://maven.fabricmc.net/", "https://bmclapi2.bangbang93.com/maven/"),
+    ("https://meta.fabricmc.net/", "https://bmclapi2.bangbang93.com/fabric-meta/"),
+    ("https://maven.quiltmc.org/repository/release/", "https://bmclapi2.bangbang93.com/maven/"),
+    ("https://meta.quiltmc.org/", "https://bmclapi2.bangbang93.com/quilt-meta/"),
+];
 
 #[derive(Debug, Error)]
 pub enum DownloaderError {
@@ -44,19 +63,26 @@ impl DownloadSource {
 pub fn transform_url(original_url: &str, source: DownloadSource) -> String {
     match source {
         DownloadSource::Official => original_url.to_string(),
-        DownloadSource::Bmclapi => original_url
-            .replace("https://piston-meta.mojang.com", "https://bmclapi2.bangbang93.com")
-            .replace("https://launchermeta.mojang.com", "https://bmclapi2.bangbang93.com")
-            .replace("https://piston-data.mojang.com", "https://bmclapi2.bangbang93.com")
-            .replace(
-                "https://libraries.minecraft.net/",
-                "https://bmclapi2.bangbang93.com/maven/",
-            )
-            .replace(
-                "https://resources.download.minecraft.net/",
-                "https://bmclapi2.bangbang93.com/assets/",
-            ),
+        DownloadSource::Bmclapi => MIRROR_MAP
+            .iter()
+            .find_map(|(official, mirror)| {
+                original_url
+                    .strip_prefix(official)
+                    .map(|rest| format!("{mirror}{rest}"))
+            })
+            .unwrap_or_else(|| original_url.to_string()),
     }
+}
+
+/// Candidate URLs for a download: the preferred source first, the other one as fallback.
+pub fn candidate_urls(original_url: &str, source: DownloadSource) -> Vec<String> {
+    let mirror = transform_url(original_url, DownloadSource::Bmclapi);
+    let mut urls = match source {
+        DownloadSource::Bmclapi => vec![mirror, original_url.to_string()],
+        DownloadSource::Official => vec![original_url.to_string(), mirror],
+    };
+    urls.dedup();
+    urls
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +105,8 @@ pub struct ManifestVersion {
     pub url: String,
     #[serde(default)]
     pub sha1: String,
+    #[serde(rename = "releaseTime", default)]
+    pub release_time: String,
 }
 
 /// Manifest endpoint for official Mojang vs BMCLAPI.
@@ -91,11 +119,10 @@ pub fn manifest_url(source: DownloadSource) -> &'static str {
     }
 }
 
-/// Fetches the version manifest from the selected mirror.
+/// Fetches the version manifest from the selected source, falling back to the other one.
 pub fn fetch_version_manifest(source: DownloadSource) -> Result<VersionManifest, DownloaderError> {
-    let url = manifest_url(source);
-    let manifest: VersionManifest = http_get_json(url)?;
-    Ok(manifest)
+    let urls = candidate_urls(manifest_url(DownloadSource::Official), source);
+    Ok(http_get_json_any(&urls)?)
 }
 
 /// Fetches detailed version info JSON from the version's manifest entry.
@@ -103,9 +130,17 @@ pub fn fetch_version_json(
     manifest_entry: &ManifestVersion,
     source: DownloadSource,
 ) -> Result<serde_json::Value, DownloaderError> {
-    let url = transform_url(&manifest_entry.url, source);
-    let val: serde_json::Value = http_get_json(&url)?;
+    let urls = candidate_urls(&manifest_entry.url, source);
+    let val: serde_json::Value = http_get_json_any(&urls)?;
     Ok(val)
+}
+
+/// Fetches a single JSON document from the preferred source (used by loader metadata APIs).
+pub fn fetch_json<T: serde::de::DeserializeOwned>(official_url: &str, source: DownloadSource) -> Result<T, DownloaderError> {
+    match source {
+        DownloadSource::Official => Ok(http_get_json(official_url)?),
+        DownloadSource::Bmclapi => Ok(http_get_json_any(&candidate_urls(official_url, source))?),
+    }
 }
 
 /// Sets up version directory structure (mods, config, saves).
@@ -118,13 +153,12 @@ pub fn setup_isolated_version_dir(game_dir: &Path, version_id: &str) -> std::io:
     Ok(v_dir)
 }
 
-/// Schedules a background download task for client.jar and saves the version JSON in the target version directory.
-pub fn install_version(
-    game_dir: &Path,
-    version_id: &str,
-    source: DownloadSource,
-    task_manager: &TaskManager,
-) -> Result<Arc<TaskHandle>, DownloaderError> {
+/// Downloads and stores `versions/{id}/{id}.json` unless it already exists.
+pub fn ensure_version_json(game_dir: &Path, version_id: &str, source: DownloadSource) -> Result<(), DownloaderError> {
+    let json_dest = version_json_path(game_dir, version_id);
+    if json_dest.is_file() {
+        return Ok(());
+    }
     let manifest = fetch_version_manifest(source)?;
     let entry = manifest
         .versions
@@ -134,33 +168,22 @@ pub fn install_version(
 
     let ver_json_value = fetch_version_json(entry, source)?;
     setup_isolated_version_dir(game_dir, version_id)?;
+    fs::write(&json_dest, serde_json::to_string_pretty(&ver_json_value)?)?;
+    Ok(())
+}
 
-    // 1. Write the version json: .minecraft/versions/{version_id}/{version_id}.json
-    let json_dest = version_json_path(game_dir, version_id);
-    let json_pretty = serde_json::to_string_pretty(&ver_json_value)?;
-    fs::write(&json_dest, json_pretty)?;
-
-    // 2. Extract client.jar download URL & SHA-1
-    let client_dl = ver_json_value
-        .get("downloads")
-        .and_then(|d| d.get("client"))
-        .ok_or(DownloaderError::MissingClientDownload)?;
-
-    let client_url = client_dl
-        .get("url")
-        .and_then(|u| u.as_str())
-        .ok_or(DownloaderError::MissingClientDownload)?;
-    let client_sha1 = client_dl
-        .get("sha1")
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string());
-
-    let client_jar_dest = version_jar_path(game_dir, version_id);
-    let final_url = transform_url(client_url, source);
-
-    // 3. Create managed task and spawn background worker
-    let task = task_manager.create_task(&format!("下载 Minecraft {version_id} 核心客户端"));
-    spawn_download_task(final_url, client_jar_dest, client_sha1, task.clone());
-
-    Ok(task)
+/// Schedules a background task installing a vanilla version completely:
+/// version JSON, client jar, libraries, natives and assets.
+pub fn install_version(
+    game_dir: &Path,
+    version_id: &str,
+    source: DownloadSource,
+    task_manager: &TaskManager,
+) -> Result<Arc<TaskHandle>, DownloaderError> {
+    let game_dir = game_dir.to_path_buf();
+    let id = version_id.to_string();
+    let title = format!("安装 Minecraft {version_id}");
+    Ok(task_manager.run_task(&title, move |task| {
+        crate::net::install::install_vanilla(&game_dir, &id, source, task)
+    }))
 }

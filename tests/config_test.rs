@@ -20,11 +20,13 @@ fn test_save_and_load_roundtrip() {
     let dir = tempdir().unwrap();
     let file_path = dir.path().join("config.json");
 
-    let mut original = LauncherConfig::default();
-    original.player_name = "Alex".to_string();
-    original.selected_version = "1.20.1".to_string();
-    original.max_memory_mb = 8192;
-    original.game_dir = PathBuf::from("/test/minecraft");
+    let original = LauncherConfig {
+        player_name: "Alex".to_string(),
+        selected_version: "1.20.1".to_string(),
+        max_memory_mb: 8192,
+        game_dir: PathBuf::from("/test/minecraft"),
+        ..Default::default()
+    };
 
     original.save_to_path(&file_path).unwrap();
     assert!(file_path.is_file());
@@ -38,8 +40,10 @@ fn test_ensure_directories() {
     let dir = tempdir().unwrap();
     let game_dir = dir.path().join(".minecraft");
 
-    let mut cfg = LauncherConfig::default();
-    cfg.game_dir = game_dir.clone();
+    let cfg = LauncherConfig {
+        game_dir: game_dir.clone(),
+        ..Default::default()
+    };
 
     cfg.ensure_game_directories().unwrap();
     assert!(game_dir.is_dir());

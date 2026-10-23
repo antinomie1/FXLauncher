@@ -30,8 +30,8 @@ pub fn get_active_shaderpack(game_dir: &Path, version_id: &str) -> Option<String
     let content = fs::read_to_string(path).ok()?;
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("shaderPack=") {
-            let val = trimmed["shaderPack=".len()..].trim();
+        if let Some(val) = trimmed.strip_prefix("shaderPack=") {
+            let val = val.trim();
             if val.is_empty() || val.eq_ignore_ascii_case("OFF") || val.eq_ignore_ascii_case("(internal)") {
                 return None;
             }
@@ -57,8 +57,8 @@ pub fn set_active_shaderpack(
     let mut lines = Vec::new();
     let mut replaced = false;
 
-    if path.is_file() {
-        if let Ok(content) = fs::read_to_string(&path) {
+    if path.is_file()
+        && let Ok(content) = fs::read_to_string(&path) {
             for line in content.lines() {
                 if line.trim().starts_with("shaderPack=") {
                     lines.push(format!("shaderPack={pack_val}"));
@@ -68,7 +68,6 @@ pub fn set_active_shaderpack(
                 }
             }
         }
-    }
 
     if !replaced {
         lines.push(format!("shaderPack={pack_val}"));

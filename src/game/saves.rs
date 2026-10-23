@@ -72,7 +72,7 @@ pub fn list_world_saves(game_dir: &Path, version_id: &str) -> Vec<WorldSaveEntry
         }
     }
 
-    list.sort_by(|a, b| b.modified_time.cmp(&a.modified_time));
+    list.sort_by_key(|a| std::cmp::Reverse(a.modified_time));
     list
 }
 

@@ -27,15 +27,13 @@ pub fn parse_java_version(output: &str) -> Option<(String, u32, bool)> {
     let mut is_64_bit = output.contains("64-Bit") || output.contains("x86_64") || output.contains("amd64");
 
     for line in output.lines() {
-        if line.contains("version \"") {
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line[start + 1..].find('"') {
+        if line.contains("version \"")
+            && let Some(start) = line.find('"')
+                && let Some(end) = line[start + 1..].find('"') {
                     let v = &line[start + 1..start + 1 + end];
                     version_str = Some(v.to_string());
                     break;
                 }
-            }
-        }
     }
 
     let version_str = version_str?;
@@ -67,7 +65,11 @@ pub fn extract_major_version(version: &str) -> Option<u32> {
 pub fn required_java_major(mc_version: &str) -> u32 {
     let clean = mc_version.trim_start_matches('v');
     let mut parts = clean.split('.');
-    let _major = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
+    let major = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
+    // Year-based versions (26.1, ...) need at least Java 25.
+    if major >= 26 {
+        return 25;
+    }
     let minor = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
     let patch = parts.next().and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
 
@@ -182,4 +184,26 @@ pub fn find_system_java_candidates() -> Vec<PathBuf> {
     candidates.push(PathBuf::from(if cfg!(target_os = "windows") { "java.exe" } else { "java" }));
     candidates.dedup();
     candidates
+}
+
+/// Picks a Java runtime for a game needing `required_major`: the preferred binary when it is new
+/// enough, otherwise the closest suitable detected runtime (an exact major match is preferred).
+pub fn select_java(preferred: &str, required_major: u32) -> Result<JavaInfo, String> {
+    let preferred = preferred.trim();
+    if !preferred.is_empty()
+        && let Ok(info) = probe_java_binary(Path::new(preferred))
+        && info.major_version >= required_major
+    {
+        return Ok(info);
+    }
+    let mut found: Vec<JavaInfo> = find_system_java_candidates()
+        .iter()
+        .filter_map(|p| probe_java_binary(p).ok())
+        .filter(|j| j.major_version >= required_major)
+        .collect();
+    found.sort_by_key(|j| (j.major_version != required_major, j.major_version, !j.is_64_bit));
+    found
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("未找到 Java {required_major} 或更高版本。请安装后在「设置」中选择 Java 路径。"))
 }

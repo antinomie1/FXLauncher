@@ -86,11 +86,10 @@ pub fn extract_error_logs(content: &str) -> Vec<LogEntry> {
     let mut errors = Vec::new();
 
     for line in content.lines() {
-        if let Some(entry) = parse_log_line(line) {
-            if entry.level == LogLevel::Error || entry.level == LogLevel::Fatal {
+        if let Some(entry) = parse_log_line(line)
+            && (entry.level == LogLevel::Error || entry.level == LogLevel::Fatal) {
                 errors.push(entry);
             }
-        }
     }
 
     errors

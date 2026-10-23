@@ -35,6 +35,18 @@ pub fn http_get_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, Htt
     Ok(val)
 }
 
+/// Fetches JSON from the first URL that answers successfully.
+pub fn http_get_json_any<T: serde::de::DeserializeOwned>(urls: &[String]) -> Result<T, HttpError> {
+    let mut last = None;
+    for url in urls {
+        match http_get_json(url) {
+            Ok(v) => return Ok(v),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| HttpError::Io(std::io::Error::other("no URL to fetch"))))
+}
+
 /// Percent-encodes a string for URL query parameters without external crates.
 pub fn url_encode(input: &str) -> String {
     let mut out = String::with_capacity(input.len());

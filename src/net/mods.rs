@@ -32,6 +32,17 @@ pub enum ModLoader {
 }
 
 impl ModLoader {
+    /// Human-readable loader name.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Vanilla => "原版",
+            Self::Fabric => "Fabric",
+            Self::Forge => "Forge",
+            Self::NeoForge => "NeoForge",
+            Self::Quilt => "Quilt",
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Vanilla => "vanilla",

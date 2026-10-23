@@ -54,16 +54,15 @@ pub fn detect_loader_from_info(info: &VersionInfo) -> InstanceLoaderInfo {
         }
 
         // Try to identify base minecraft version from library versions
-        if name.starts_with("com.mojang:minecraft:") || name.starts_with("net.minecraft:client:") {
-            if game_version.is_none() {
+        if (name.starts_with("com.mojang:minecraft:") || name.starts_with("net.minecraft:client:"))
+            && game_version.is_none() {
                 game_version = extract_library_version(name);
             }
-        }
     }
 
     // Fallback: if game_version was not in libraries, check assets / id
     if game_version.is_none() {
-        game_version = Some(info.id.clone());
+        game_version = Some(info.client_jar_id().to_string());
     }
 
     InstanceLoaderInfo {

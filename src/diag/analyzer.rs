@@ -102,12 +102,11 @@ pub fn analyze_crash_text(text: &str) -> AnalysisReport {
     }
 
     // 3. Fabric Missing Dependencies
-    if text.contains("net.fabricmc.loader.impl.FormattedException")
+    if (text.contains("net.fabricmc.loader.impl.FormattedException")
         || text.contains("incompatible with the game or each other")
         || text.contains("requires version")
-        || text.contains("that is not installed")
-    {
-        if let Some((mod_name, dep_name, ver_req)) = parse_fabric_missing_dep(text) {
+        || text.contains("that is not installed"))
+        && let Some((mod_name, dep_name, ver_req)) = parse_fabric_missing_dep(text) {
             if !suspected.contains(&mod_name) {
                 suspected.push(mod_name.clone());
             }
@@ -125,7 +124,6 @@ pub fn analyze_crash_text(text: &str) -> AnalysisReport {
                 stacktrace: if parsed_report.stacktrace.is_empty() { None } else { Some(parsed_report.stacktrace) },
             };
         }
-    }
 
     // 4. Forge Missing / Duplicate Mod Dependencies
     if text.contains("ModLoadingException")
@@ -247,20 +245,18 @@ fn parse_class_version_numbers(text: &str) -> (Option<u32>, Option<u32>) {
 
     if let Some(pos) = text.find("class file version ") {
         let after = &text[pos + "class file version ".len()..];
-        if let Some(dot) = after.find('.') {
-            if let Ok(ver) = after[..dot].parse::<u32>() {
+        if let Some(dot) = after.find('.')
+            && let Ok(ver) = after[..dot].parse::<u32>() {
                 req = Some(class_file_version_to_java(ver));
             }
-        }
     }
 
     if let Some(pos) = text.find("only recognizes class file versions up to ") {
         let after = &text[pos + "only recognizes class file versions up to ".len()..];
-        if let Some(dot) = after.find('.') {
-            if let Ok(ver) = after[..dot].parse::<u32>() {
+        if let Some(dot) = after.find('.')
+            && let Ok(ver) = after[..dot].parse::<u32>() {
                 cur = Some(class_file_version_to_java(ver));
             }
-        }
     }
 
     (cur, req)
@@ -270,11 +266,11 @@ fn parse_class_version_numbers(text: &str) -> (Option<u32>, Option<u32>) {
 fn parse_fabric_missing_dep(text: &str) -> Option<(String, String, Option<String>)> {
     for line in text.lines() {
         let trimmed = line.trim();
-        let clean = trimmed.trim_start_matches(|c: char| c == '-' || c == '•' || c == '*' || c == '\t' || c == ' ').trim();
+        let clean = trimmed.trim_start_matches(['-', '•', '*', '\t', ' ']).trim();
 
         // Pattern 1: Mod 'foo' (foo) requires version >=1.0 of 'bar' (bar)
-        if clean.starts_with("Mod '") {
-            if let Some(mod_end) = clean[5..].find('\'') {
+        if clean.starts_with("Mod '")
+            && let Some(mod_end) = clean[5..].find('\'') {
                 let mod_name = clean[5..5 + mod_end].to_string();
                 if let Some(req_pos) = clean.find("requires") {
                     let after_req = &clean[req_pos + "requires".len()..];
@@ -292,7 +288,6 @@ fn parse_fabric_missing_dep(text: &str) -> Option<(String, String, Option<String
                     }
                 }
             }
-        }
 
         // Pattern 2: A mod requires a version of 'foo' that is not installed
         if trimmed.contains("requires a version of '") {
@@ -323,7 +318,7 @@ fn parse_forge_missing_dep(text: &str) -> Option<(String, String)> {
 fn extract_duplicate_mod(text: &str) -> Option<String> {
     for line in text.lines() {
         if line.contains("Duplicate mod ID was found:") || line.contains("duplicate mod:") {
-            let after = line.split(':').last().unwrap_or("").trim();
+            let after = line.split(':').next_back().unwrap_or("").trim();
             if !after.is_empty() {
                 return Some(after.to_string());
             }
@@ -335,8 +330,8 @@ fn extract_duplicate_mod(text: &str) -> Option<String> {
 /// Helper to extract mod name from mixin error lines.
 fn extract_mod_from_mixin(text: &str) -> Option<String> {
     for line in text.lines() {
-        if line.contains("in classmap") || line.contains("in target") || line.contains("mixin:") {
-            if let Some(pos) = line.find("mixin:") {
+        if (line.contains("in classmap") || line.contains("in target") || line.contains("mixin:"))
+            && let Some(pos) = line.find("mixin:") {
                 let after = &line[pos + 6..];
                 if let Some(end) = after.find('.') {
                     let m = after[..end].trim();
@@ -345,7 +340,6 @@ fn extract_mod_from_mixin(text: &str) -> Option<String> {
                     }
                 }
             }
-        }
     }
     None
 }
@@ -366,16 +360,13 @@ pub fn find_latest_crash_report(game_dir: &Path, version_id: Option<&str>) -> Op
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("txt") {
-                    if let Ok(meta) = entry.metadata() {
-                        if let Ok(modified) = meta.modified() {
-                            if modified > newest_time {
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("txt")
+                    && let Ok(meta) = entry.metadata()
+                        && let Ok(modified) = meta.modified()
+                            && modified > newest_time {
                                 newest_time = modified;
                                 newest_file = Some(path);
                             }
-                        }
-                    }
-                }
             }
         }
     }

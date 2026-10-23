@@ -34,6 +34,7 @@ fn test_evaluate_rules() {
             version: None,
             arch: None,
         }),
+        ..Default::default()
     }];
     assert!(evaluate_rules(&win_only, "windows"));
     assert!(!evaluate_rules(&win_only, "linux"));
@@ -44,6 +45,7 @@ fn test_evaluate_rules() {
         Rule {
             action: "allow".to_string(),
             os: None,
+            ..Default::default()
         },
         Rule {
             action: "disallow".to_string(),
@@ -52,6 +54,7 @@ fn test_evaluate_rules() {
                 version: None,
                 arch: None,
             }),
+            ..Default::default()
         },
     ];
     assert!(evaluate_rules(&disallow_osx, "linux"));

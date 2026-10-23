@@ -23,14 +23,14 @@ pub fn parse_crash_report(content: &str) -> CrashReport {
     for line in content.lines() {
         let trimmed = line.trim();
 
-        if trimmed.starts_with("Description:") {
-            report.description = trimmed["Description:".len()..].trim().to_string();
+        if let Some(rest) = trimmed.strip_prefix("Description:") {
+            report.description = rest.trim().to_string();
             in_stacktrace = true;
             continue;
         }
 
-        if trimmed.starts_with("Time:") {
-            report.time = Some(trimmed["Time:".len()..].trim().to_string());
+        if let Some(rest) = trimmed.strip_prefix("Time:") {
+            report.time = Some(rest.trim().to_string());
             continue;
         }
 

@@ -28,16 +28,19 @@ fn test_detect_instance_loader() {
                 downloads: None,
                 rules: None,
                 natives: None,
+                ..Default::default()
             },
             Library {
                 name: "optifine:OptiFine:1.21.4_HD_U_I1".to_string(),
                 downloads: None,
                 rules: None,
                 natives: None,
+                ..Default::default()
             },
         ],
         legacy_arguments: None,
         arguments: None,
+        ..Default::default()
     };
 
     let detected = detect_loader_from_info(&info);
@@ -52,6 +55,7 @@ fn test_detect_instance_loader() {
         downloads: None,
         rules: None,
         natives: None,
+        ..Default::default()
     }];
     let forge_detected = detect_loader_from_info(&info);
     assert_eq!(forge_detected.loader, ModLoader::Forge);
@@ -64,6 +68,7 @@ fn test_detect_instance_loader() {
         downloads: None,
         rules: None,
         natives: None,
+        ..Default::default()
     }];
     let neoforge_detected = detect_loader_from_info(&info);
     assert_eq!(neoforge_detected.loader, ModLoader::NeoForge);
@@ -81,6 +86,16 @@ fn test_deduce_mod_info_from_filename() {
     assert_eq!(id2, "iris");
     assert_eq!(ver2.as_deref(), Some("1.6.4"));
     assert_eq!(mc2.as_deref(), Some("1.20.1"));
+
+    // An explicit `+mc` tag is the game version even when the mod version starts with "1.".
+    let (id3, ver3, mc3) = deduce_mod_info_from_filename("iris-fabric-1.8.0+mc1.21.1.jar");
+    assert_eq!(id3, "iris");
+    assert_eq!(ver3.as_deref(), Some("1.8.0"));
+    assert_eq!(mc3.as_deref(), Some("1.21.1"));
+
+    let (_, ver4, mc4) = deduce_mod_info_from_filename("jei-1.20.1-forge-15.3.0.4.jar");
+    assert_eq!(ver4.as_deref(), Some("15.3.0.4"));
+    assert_eq!(mc4.as_deref(), Some("1.20.1"));
 }
 
 #[test]

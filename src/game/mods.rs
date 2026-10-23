@@ -50,21 +50,19 @@ pub fn deduce_mod_info_from_filename(filename: &str) -> (String, Option<String>,
     let parts: Vec<&str> = clean.split(&['-', '_', '+'][..]).collect();
     let mod_id = parts.first().unwrap_or(&clean).to_lowercase();
 
-    let mut mc_ver = None;
-    let mut mod_ver = None;
-
-    for part in &parts[1..] {
-        if part.starts_with("mc") || part.starts_with("1.") {
-            let v = part.trim_start_matches("mc");
-            if v.contains('.') && mc_ver.is_none() {
-                mc_ver = Some(v.to_string());
-                continue;
-            }
-        }
-        if part.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && mod_ver.is_none() {
-            mod_ver = Some(part.to_string());
-        }
-    }
+    let rest = parts.get(1..).unwrap_or_default();
+    let starts_numeric = |s: &str| s.chars().next().is_some_and(|c| c.is_ascii_digit());
+    // An explicit `mc1.21.1` tag wins; otherwise the first unprefixed `1.x` part is taken as the game version.
+    let mc_index = rest
+        .iter()
+        .position(|p| p.strip_prefix("mc").is_some_and(|v| starts_numeric(v) && v.contains('.')))
+        .or_else(|| rest.iter().position(|p| p.starts_with("1.") && p.len() > 2));
+    let mc_ver = mc_index.map(|i| rest[i].trim_start_matches("mc").to_string());
+    let mod_ver = rest
+        .iter()
+        .enumerate()
+        .find(|(i, p)| Some(*i) != mc_index && starts_numeric(p))
+        .map(|(_, p)| p.to_string());
 
     (mod_id, mod_ver, mc_ver)
 }
@@ -140,12 +138,10 @@ pub fn disable_mod(game_dir: &Path, version_id: &str, file_name: &str) -> std::i
     let mods_dir = version_mods_dir(game_dir, version_id);
     let current_path = mods_dir.join(file_name);
 
-    let new_name = if file_name.ends_with(".jar") {
-        format!("{file_name}.disabled")
-    } else if !file_name.ends_with(".disabled") {
-        format!("{file_name}.disabled")
-    } else {
+    let new_name = if file_name.ends_with(".disabled") {
         file_name.to_string()
+    } else {
+        format!("{file_name}.disabled")
     };
 
     let new_path = mods_dir.join(&new_name);
@@ -214,14 +210,13 @@ pub fn analyze_instance_mods(
     // 2. Minecraft version compatibility checks
     if let Some(target_ver) = target_mc_version {
         for m in &mods {
-            if let Some(mc) = &m.deduced_mc_version {
-                if !target_ver.starts_with(mc) && !mc.starts_with(target_ver) {
+            if let Some(mc) = &m.deduced_mc_version
+                && !target_ver.starts_with(mc) && !mc.starts_with(target_ver) {
                     report.compatibility_warnings.push(format!(
                         "模组 '{}' 标注支持 Minecraft {}，可能与当前版本 {} 不匹配。",
                         m.file_name, mc, target_ver
                     ));
                 }
-            }
         }
     }
 
@@ -238,14 +233,13 @@ pub fn analyze_instance_mods(
                         ));
                     }
                 }
-                ModLoader::Forge => {
-                    if lower_name.contains("-fabric-") || lower_name.ends_with("-fabric.jar") {
+                ModLoader::Forge
+                    if (lower_name.contains("-fabric-") || lower_name.ends_with("-fabric.jar")) => {
                         report.compatibility_warnings.push(format!(
                             "模组 '{}' 疑似为 Fabric 专属版本，无法在 Forge 实例中加载。",
                             m.file_name
                         ));
                     }
-                }
                 _ => {}
             }
         }

@@ -15,6 +15,15 @@ pub enum ConfigError {
     Json(#[from] serde_json::Error),
 }
 
+/// UI color scheme preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum ThemePreference {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 /// Launcher configuration options.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LauncherConfig {
@@ -44,6 +53,9 @@ pub struct LauncherConfig {
     /// Download source mirror (Official or BMCLAPI).
     #[serde(default)]
     pub download_source: DownloadSource,
+    /// UI color scheme.
+    #[serde(default)]
+    pub theme: ThemePreference,
 }
 
 fn default_true() -> bool {
@@ -65,6 +77,7 @@ impl Default for LauncherConfig {
             window_height: 480,
             version_isolation: true,
             download_source: DownloadSource::Bmclapi,
+            theme: ThemePreference::System,
         }
     }
 }
@@ -73,6 +86,16 @@ impl LauncherConfig {
     /// Path to default configuration file inside the game directory.
     pub fn config_file_path(game_dir: &Path) -> PathBuf {
         game_dir.join("fxlauncher.json")
+    }
+
+    /// Fixed location of the launcher's own settings: `fxlauncher.json` in the default `.minecraft`.
+    pub fn default_path() -> PathBuf {
+        Self::config_file_path(&default_minecraft_dir())
+    }
+
+    /// Loads the settings at [`default_path`](Self::default_path), or defaults when absent or unreadable.
+    pub fn load_or_default() -> Self {
+        Self::load_from_path(&Self::default_path()).unwrap_or_default()
     }
 
     /// Loads launcher configuration from a JSON file.
