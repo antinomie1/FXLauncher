@@ -14,7 +14,9 @@ use thiserror::Error;
 pub const CLIENT_ID: &str = "508f8b36-3caa-44cd-be00-3ba2967c541d";
 /// Personal Microsoft accounts only: Minecraft cannot be owned by work or school accounts.
 const AUTHORITY: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0";
-const SCOPE: &str = "XboxLive.signin offline_access";
+/// Verified to sign in with this app ID. Users type the code at `verification_uri` themselves:
+/// the `?otc=` prefilled link ends in a "first party application … consent" error.
+const SCOPE: &str = "XboxLive.SignIn XboxLive.offline_access";
 const XBL_AUTH: &str = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_AUTH: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 pub(super) const MC_API: &str = "https://api.minecraftservices.com";
@@ -57,13 +59,6 @@ pub struct DeviceCode {
     pub interval: u64,
 }
 
-impl DeviceCode {
-    /// Sign-in page with the code already filled in.
-    pub fn prefilled_uri(&self) -> String {
-        format!("{}?otc={}", self.verification_uri, self.user_code)
-    }
-}
-
 /// Microsoft OAuth tokens.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MsToken {
@@ -73,14 +68,23 @@ pub struct MsToken {
 }
 
 /// Sends a request and returns the status and body; HTTP error statuses are not errors here.
-pub(super) fn send(result: Result<ureq::Response, ureq::Error>) -> Result<(u16, String), AuthError> {
-    match result {
-        Ok(r) => {
-            let status = r.status();
-            Ok((status, r.into_string().map_err(|e| AuthError::Network(e.to_string()))?))
+/// Sign-in hosts now and then drop the TLS handshake, so failed connections are retried:
+/// nothing has reached the server yet, which keeps this safe for any method.
+pub(super) fn send(call: impl Fn() -> Result<ureq::Response, ureq::Error>) -> Result<(u16, String), AuthError> {
+    let mut attempt = 1;
+    loop {
+        match call() {
+            Ok(r) => {
+                let status = r.status();
+                return Ok((status, r.into_string().map_err(|e| AuthError::Network(e.to_string()))?));
+            }
+            Err(ureq::Error::Status(status, r)) => return Ok((status, r.into_string().unwrap_or_default())),
+            Err(ureq::Error::Transport(t)) if attempt < 3 && matches!(t.kind(), ureq::ErrorKind::ConnectionFailed | ureq::ErrorKind::Dns) => {
+                attempt += 1;
+                thread::sleep(Duration::from_secs(1));
+            }
+            Err(e) => return Err(AuthError::Network(e.to_string())),
         }
-        Err(ureq::Error::Status(status, r)) => Ok((status, r.into_string().unwrap_or_default())),
-        Err(e) => Err(AuthError::Network(e.to_string())),
     }
 }
 
@@ -101,7 +105,7 @@ fn now() -> u64 {
 
 /// Starts a device-code sign-in.
 pub fn request_device_code() -> Result<DeviceCode, AuthError> {
-    let (status, body) = send(request("POST", &format!("{AUTHORITY}/devicecode")).send_form(&[("client_id", CLIENT_ID), ("scope", SCOPE)]))?;
+    let (status, body) = send(|| request("POST", &format!("{AUTHORITY}/devicecode")).send_form(&[("client_id", CLIENT_ID), ("scope", SCOPE)]))?;
     if status != 200 {
         return Err(oauth_error(&body));
     }
@@ -138,7 +142,7 @@ pub fn poll_device_code(code: &DeviceCode, cancel: &AtomicBool) -> Result<MsToke
             ("client_id", CLIENT_ID),
             ("device_code", code.device_code.as_str()),
         ];
-        let (status, body) = send(request("POST", &format!("{AUTHORITY}/token")).send_form(&form))?;
+        let (status, body) = send(|| request("POST", &format!("{AUTHORITY}/token")).send_form(&form))?;
         if status == 200 {
             return parse(&body);
         }
@@ -154,7 +158,7 @@ pub fn poll_device_code(code: &DeviceCode, cancel: &AtomicBool) -> Result<MsToke
 /// Exchanges a refresh token for new Microsoft tokens.
 pub fn refresh_ms_token(refresh_token: &str) -> Result<MsToken, AuthError> {
     let form = [("grant_type", "refresh_token"), ("client_id", CLIENT_ID), ("scope", SCOPE), ("refresh_token", refresh_token)];
-    let (status, body) = send(request("POST", &format!("{AUTHORITY}/token")).send_form(&form))?;
+    let (status, body) = send(|| request("POST", &format!("{AUTHORITY}/token")).send_form(&form))?;
     if status != 200 {
         return Err(oauth_error(&body));
     }
@@ -190,7 +194,7 @@ pub fn login_minecraft(ms_access_token: &str) -> Result<(String, u64, McProfile)
         "RelyingParty": "http://auth.xboxlive.com",
         "TokenType": "JWT",
     });
-    let (status, body) = send(request("POST", XBL_AUTH).send_json(xbl))?;
+    let (status, body) = send(|| request("POST", XBL_AUTH).send_json(&xbl))?;
     if status != 200 {
         return Err(AuthError::Service(format!("Xbox Live 验证失败（HTTP {status}）")));
     }
@@ -201,7 +205,7 @@ pub fn login_minecraft(ms_access_token: &str) -> Result<(String, u64, McProfile)
         "RelyingParty": "rp://api.minecraftservices.com/",
         "TokenType": "JWT",
     });
-    let (status, body) = send(request("POST", XSTS_AUTH).send_json(xsts))?;
+    let (status, body) = send(|| request("POST", XSTS_AUTH).send_json(&xsts))?;
     if status == 401 {
         let v: Value = serde_json::from_str(&body).unwrap_or_default();
         return Err(xsts_error(v["XErr"].as_u64().unwrap_or(0)));
@@ -212,7 +216,7 @@ pub fn login_minecraft(ms_access_token: &str) -> Result<(String, u64, McProfile)
     let (xsts_token, uhs) = xbox_token(&body)?;
 
     let identity = json!({ "identityToken": format!("XBL3.0 x={uhs};{xsts_token}") });
-    let (status, body) = send(request("POST", &format!("{MC_API}/authentication/login_with_xbox")).send_json(identity))?;
+    let (status, body) = send(|| request("POST", &format!("{MC_API}/authentication/login_with_xbox")).send_json(&identity))?;
     if status == 403 && body.contains("Invalid app registration") {
         return Err(AuthError::AppNotApproved);
     }
@@ -232,7 +236,7 @@ pub fn login_minecraft(ms_access_token: &str) -> Result<(String, u64, McProfile)
 
 /// Whether the entitlements list Minecraft: Java Edition (a purchase or Game Pass).
 fn owns_minecraft(mc_token: &str) -> Result<bool, AuthError> {
-    let (status, body) = send(request("GET", &format!("{MC_API}/entitlements/mcstore")).set("Authorization", &format!("Bearer {mc_token}")).call())?;
+    let (status, body) = send(|| request("GET", &format!("{MC_API}/entitlements/mcstore")).set("Authorization", &format!("Bearer {mc_token}")).call())?;
     if status != 200 {
         return Err(AuthError::Service(format!("无法查询游戏所有权（HTTP {status}）")));
     }

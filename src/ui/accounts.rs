@@ -183,8 +183,8 @@ impl Controller {
         let sh = &self.shell;
         match result {
             Ok(code) => {
-                put(&sh.login_status, "已在浏览器中打开微软登录页，代码已自动填入；如果没有打开，请手动访问下面的网址并输入代码。登录完成后这里会自动继续。".into());
-                put(&sh.login_url, code.prefilled_uri());
+                put(&sh.login_status, "已在浏览器中打开微软登录页，请输入下面的代码；如果没有打开，请手动访问下面的网址。登录完成后这里会自动继续。".into());
+                put(&sh.login_url, code.verification_uri.clone());
                 put(&sh.login_code, code.user_code.clone());
                 self.open_login_page();
             }

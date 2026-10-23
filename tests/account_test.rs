@@ -120,7 +120,7 @@ fn test_auth_helpers() {
     assert!(matches!(xsts_error(2148916238), AuthError::ChildAccount));
     assert!(matches!(xsts_error(42), AuthError::Xsts(42)));
     let code: DeviceCode = serde_json::from_str(r#"{"user_code":"ABCD1234","device_code":"x","verification_uri":"https://www.microsoft.com/link","expires_in":900,"interval":5,"message":"…"}"#).unwrap();
-    assert_eq!(code.prefilled_uri(), "https://www.microsoft.com/link?otc=ABCD1234");
+    assert_eq!((code.user_code.as_str(), code.verification_uri.as_str()), ("ABCD1234", "https://www.microsoft.com/link"));
 }
 
 #[test]

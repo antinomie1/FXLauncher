@@ -77,13 +77,13 @@ fn profile_response(status: u16, body: &str, action: &str) -> Result<McProfile, 
 
 /// Fetches the profile of the signed-in player.
 pub fn fetch_profile(token: &str) -> Result<McProfile, AuthError> {
-    let (status, body) = send(authed("GET", "/minecraft/profile", token).call())?;
+    let (status, body) = send(|| authed("GET", "/minecraft/profile", token).call())?;
     profile_response(status, &body, "读取档案")
 }
 
 /// Changes the player name. Mojang allows one change every 30 days.
 pub fn change_name(token: &str, name: &str) -> Result<McProfile, AuthError> {
-    let (status, body) = send(authed("PUT", &format!("/minecraft/profile/name/{}", url_encode(name)), token).call())?;
+    let (status, body) = send(|| authed("PUT", &format!("/minecraft/profile/name/{}", url_encode(name)), token).call())?;
     let v: Value = serde_json::from_str(&body).unwrap_or_default();
     match (status, v["details"]["status"].as_str()) {
         (_, Some("DUPLICATE")) => Err(AuthError::Service(format!("玩家名 {name} 已被占用"))),
@@ -119,29 +119,28 @@ pub fn upload_skin(token: &str, png: &[u8], slim: bool) -> Result<McProfile, Aut
     body.extend_from_slice(png);
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     let req = authed("POST", "/minecraft/profile/skins", token).set("Content-Type", &format!("multipart/form-data; boundary={boundary}"));
-    let (status, text) = send(req.send_bytes(&body))?;
+    let (status, text) = send(|| req.clone().send_bytes(&body))?;
     profile_response(status, &text, "上传皮肤")
 }
 
 /// Sets the skin to one hosted at `url` (e.g. a texture already on textures.minecraft.net).
 pub fn set_skin_url(token: &str, url: &str, slim: bool) -> Result<McProfile, AuthError> {
     let variant = if slim { "slim" } else { "classic" };
-    let (status, body) = send(authed("POST", "/minecraft/profile/skins", token).send_json(json!({ "variant": variant, "url": url })))?;
+    let (status, body) = send(|| authed("POST", "/minecraft/profile/skins", token).send_json(json!({ "variant": variant, "url": url })))?;
     profile_response(status, &body, "更换皮肤")
 }
 
 /// Resets the skin to the default one.
 pub fn reset_skin(token: &str) -> Result<McProfile, AuthError> {
-    let (status, body) = send(authed("DELETE", "/minecraft/profile/skins/active", token).call())?;
+    let (status, body) = send(|| authed("DELETE", "/minecraft/profile/skins/active", token).call())?;
     profile_response(status, &body, "重置皮肤")
 }
 
 /// Shows the cape with this id, or hides the cape when `cape_id` is `None`.
 pub fn set_cape(token: &str, cape_id: Option<&str>) -> Result<McProfile, AuthError> {
-    let result = match cape_id {
+    let (status, body) = send(|| match cape_id {
         Some(id) => authed("PUT", "/minecraft/profile/capes/active", token).send_json(json!({ "capeId": id })),
         None => authed("DELETE", "/minecraft/profile/capes/active", token).call(),
-    };
-    let (status, body) = send(result)?;
+    })?;
     profile_response(status, &body, "更换披风")
 }
